@@ -106,18 +106,20 @@ fn main() -> io::Result<()> {
         let mut poly_y = 0.0;
         sequence.active_polygons.iter().for_each(|p| {
             for animation_data in &sequence.polygon_motion_paths {
-                for animation_property in &animation_data.properties {
-                    if animation_property.name == "Position" {
-                        for (j, keyframe) in animation_property.keyframes.iter().enumerate() {
-                            if keyframe.time == Duration::from_secs(5) {
-                                let (x, y) = match &keyframe.value {
-                                    KeyframeValue::Position(position) => {
-                                        (position[0] as f64, position[1] as f64)
-                                    }
-                                    _ => (0.0, 0.0),
-                                };
-                                poly_x = x;
-                                poly_y = y;
+                if animation_data.polygon_id == p.id {
+                    for animation_property in &animation_data.properties {
+                        if animation_property.name == "Position" {
+                            for (j, keyframe) in animation_property.keyframes.iter().enumerate() {
+                                if keyframe.time == Duration::from_secs(5) {
+                                    let (x, y) = match &keyframe.value {
+                                        KeyframeValue::Position(position) => {
+                                            (position[0] as f64, position[1] as f64)
+                                        }
+                                        _ => (0.0, 0.0),
+                                    };
+                                    poly_x = x;
+                                    poly_y = y;
+                                }
                             }
                         }
                     }
