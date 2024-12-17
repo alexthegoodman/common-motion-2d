@@ -100,6 +100,51 @@ fn main() -> io::Result<()> {
     let train_size = (num_sequences as f64 * 0.8) as usize;
 
     for (i, sequence) in saved_state.sequences.iter().enumerate() {
+        let mut polygon_index = 0;
+
+        let mut poly_x = 0.0;
+        let mut poly_y = 0.0;
+        sequence.active_polygons.iter().for_each(|p| {
+            for animation_data in &sequence.polygon_motion_paths {
+                for animation_property in &animation_data.properties {
+                    if animation_property.name == "Position" {
+                        for (j, keyframe) in animation_property.keyframes.iter().enumerate() {
+                            if keyframe.time == Duration::from_secs(5) {
+                                let (x, y) = match &keyframe.value {
+                                    KeyframeValue::Position(position) => {
+                                        (position[0] as f64, position[1] as f64)
+                                    }
+                                    _ => (0.0, 0.0),
+                                };
+                                poly_x = x;
+                                poly_y = y;
+                            }
+                        }
+                    }
+                }
+            }
+
+            let record = vec![
+                format!("{}", polygon_index),
+                format!("{}", 5),
+                format!("{}", p.dimensions.0),
+                format!("{}", p.dimensions.1),
+                format!("{}", poly_x),
+                format!("{}", poly_y),
+            ];
+
+            if i < train_size {
+                train_writer
+                    .write_record(&record)
+                    .expect("Coudn't write header record");
+            } else {
+                test_writer
+                    .write_record(&record)
+                    .expect("Coudn't write header record");
+            }
+            polygon_index = polygon_index + 1;
+        });
+
         for animation_data in &sequence.polygon_motion_paths {
             for animation_property in &animation_data.properties {
                 if animation_property.name == "Position" {
