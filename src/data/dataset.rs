@@ -58,7 +58,7 @@ pub struct MotionPaths {
     pub polygon_index: i32,
 
     #[serde(rename = "TIME")]
-    pub time: i32,
+    pub time: f32,
 
     #[serde(rename = "WIDTH")]
     pub width: i32,
@@ -97,6 +97,7 @@ impl MotionDataset {
         let path = MotionDataset::download_train();
 
         let mut rdr = csv::ReaderBuilder::new();
+        let rdr = rdr.has_headers(false);
         // let rdr = rdr.delimiter(b'\t'); // we can use default , deliminator
 
         let dataset = InMemDataset::from_csv(path, &rdr).unwrap();
@@ -111,6 +112,7 @@ impl MotionDataset {
         let path = MotionDataset::download_test();
 
         let mut rdr = csv::ReaderBuilder::new();
+        let rdr = rdr.has_headers(false);
         // let rdr = rdr.delimiter(b'\t'); // we can use default , deliminator
 
         let dataset = InMemDataset::from_csv(path, &rdr).unwrap();
@@ -122,7 +124,7 @@ impl MotionDataset {
 
     fn download_train() -> PathBuf {
         // Point file to current example directory
-        let backup_dir = Path::new("../../backup");
+        let backup_dir = Path::new("backup");
         let file_name = backup_dir.join("train.csv");
 
         if file_name.exists() {
@@ -134,7 +136,7 @@ impl MotionDataset {
 
     fn download_test() -> PathBuf {
         // Point file to current example directory
-        let backup_dir = Path::new("../../backup");
+        let backup_dir = Path::new("backup");
         let file_name = backup_dir.join("test.csv");
 
         if file_name.exists() {
