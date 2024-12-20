@@ -158,10 +158,21 @@ impl Dataset<TextGenerationItem> for MotionDataset {
             .get(index)
             // .map(|item| TextGenerationItem::new(item.content)) // content is usually a whole text block
             .map(|item| {
+                // option 1 worst
+                // let text = format!(
+                //     "Polygon index: {},{},{},{},{},{}",
+                //     item.polygon_index, item.time, item.width, item.height, item.x, item.y
+                // );
+
+                // option 2 better
                 let text = format!(
                     "{}, {}, {}, {}, {}, {}",
                     item.polygon_index, item.time, item.width, item.height, item.x, item.y
                 );
+
+                // option 3 best?
+                // The polygon index is 1, the time is 2, the width is 3, the height is 4, the x-coordinate is 5, and the y-coordinate is 6.
+
                 TextGenerationItem::new(text)
             })
     }
