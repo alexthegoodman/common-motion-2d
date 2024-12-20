@@ -24,14 +24,15 @@ use std::sync::Arc;
 
 #[derive(Config)]
 pub struct ExperimentConfig {
-    transformer: TransformerEncoderConfig,
-    optimizer: AdamConfig,
+    pub transformer: TransformerEncoderConfig,
+    pub optimizer: AdamConfig,
     #[config(default = 512)]
-    max_seq_length: usize,
+    pub max_seq_length: usize,
     #[config(default = 6)]
-    batch_size: usize,
-    #[config(default = 50)]
-    num_epochs: usize,
+    pub batch_size: usize,
+    // #[config(default = 50)]
+    #[config(default = 10)]
+    pub num_epochs: usize,
 }
 
 pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
@@ -56,17 +57,20 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
     let dataloader_train = DataLoaderBuilder::new(batcher_train)
         .batch_size(config.batch_size)
         .num_workers(4)
-        .build(SamplerDataset::new(dataset_train, 10_000));
+        // .build(SamplerDataset::new(dataset_train, 10_000));
+        .build(SamplerDataset::new(dataset_train, 4326));
 
     let dataloader_test = DataLoaderBuilder::new(batcher_test)
         .batch_size(config.batch_size)
         .num_workers(4)
-        .build(SamplerDataset::new(dataset_test, 1000));
+        // .build(SamplerDataset::new(dataset_test, 1000));
+        .build(SamplerDataset::new(dataset_test, 1050));
 
     let accum = 6; // Effective batch size = 6 * 6 = 32.
     let optim = config.optimizer.init();
     let lr_scheduler = NoamLrSchedulerConfig::new(0.01 / accum as f64)
-        .with_warmup_steps(6000)
+        // .with_warmup_steps(6000)
+        .with_warmup_steps(2000)
         .with_model_size(config.transformer.d_model)
         .init();
 

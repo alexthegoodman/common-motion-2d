@@ -13,10 +13,10 @@ use burn::{
 
 #[derive(Config)]
 pub struct TextGenerationModelConfig {
-    transformer: TransformerEncoderConfig,
-    vocab_size: usize,
-    pad_token: usize,
-    max_seq_length: usize,
+    pub transformer: TransformerEncoderConfig,
+    pub vocab_size: usize,
+    pub pad_token: usize,
+    pub max_seq_length: usize,
 }
 
 #[derive(Module, Debug)]
