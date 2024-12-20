@@ -31,7 +31,7 @@ pub struct ExperimentConfig {
     #[config(default = 6)]
     pub batch_size: usize,
     // #[config(default = 50)]
-    #[config(default = 10)]
+    #[config(default = 3)]
     pub num_epochs: usize,
 }
 
