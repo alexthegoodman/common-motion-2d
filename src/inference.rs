@@ -18,7 +18,11 @@ use std::{path::Path, sync::Arc};
 
 use crate::{data::tokenizer::Gpt2Tokenizer, model::TextGenerationModel};
 
-pub fn infer_from_text<B: Backend>(artifact_dir: &str, device: &B::Device, text: &str) {
+pub fn infer_from_text<B: Backend>(
+    artifact_dir: &str,
+    device: &B::Device,
+    text_items: Vec<String>,
+) {
     // Load experiment configuration
     let config = ExperimentConfig::load(format!("{artifact_dir}/config.json").as_str())
         .expect("Config file present");
@@ -44,9 +48,13 @@ pub fn infer_from_text<B: Backend>(artifact_dir: &str, device: &B::Device, text:
     let model: TextGenerationModel<B> = model.load_record(record);
 
     // Create a batch from the input text
-    let item = TextGenerationItem::new(text.to_string());
     let mut items = Vec::new();
-    items.push(item);
+
+    text_items.iter().for_each(|t| {
+        let item = TextGenerationItem::new(t.to_string());
+        items.push(item);
+    });
+
     let input = batcher.batch(items);
 
     // Run inference
