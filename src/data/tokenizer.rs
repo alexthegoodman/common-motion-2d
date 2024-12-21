@@ -23,11 +23,20 @@ pub struct Gpt2Tokenizer {
 
 impl Default for Gpt2Tokenizer {
     fn default() -> Self {
-        let mut tokenizer = tokenizers::Tokenizer::from_pretrained("gpt2", None).unwrap();
+        // let mut tokenizer = tokenizers::Tokenizer::from_pretrained("gpt2", None).unwrap();
+        let mut tokenizer = tokenizers::Tokenizer::from_file(
+            "D:/projects/common/common-motion-2d/backup/tokenizer.json",
+        )
+        .unwrap();
         tokenizer.add_special_tokens(&[
             tokenizers::AddedToken::from("[START]", true),
             tokenizers::AddedToken::from("[END]", true),
             tokenizers::AddedToken::from("[PAD]", true),
+            tokenizers::AddedToken::from(String::from("<s>"), true),
+            tokenizers::AddedToken::from(String::from("<pad>"), true),
+            tokenizers::AddedToken::from(String::from("</s>"), true),
+            tokenizers::AddedToken::from(String::from("<unk>"), true),
+            tokenizers::AddedToken::from(String::from("<mask>"), true),
         ]);
 
         Self { tokenizer }

@@ -166,12 +166,18 @@ impl Dataset<TextGenerationItem> for MotionDataset {
 
                 // option 2 better
                 let text = format!(
-                    "{}, {}, {}, {}, {}, {}",
+                    "{} {} {} {} {} {}",
                     item.polygon_index, item.time, item.width, item.height, item.x, item.y
                 );
 
                 // option 3 best?
                 // The polygon index is 1, the time is 2, the width is 3, the height is 4, the x-coordinate is 5, and the y-coordinate is 6.
+
+                // option 4
+                // let text = format!(
+                //     "{} {} {} {} {} {}",
+                //     item.polygon_index, item.time, item.width, item.height, item.x, item.y
+                // );
 
                 TextGenerationItem::new(text)
             })
