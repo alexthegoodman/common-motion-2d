@@ -164,11 +164,11 @@ impl Dataset<TextGenerationItem> for MotionDataset {
                 //     item.polygon_index, item.time, item.width, item.height, item.x, item.y
                 // );
 
-                // option 2 better
-                let text = format!(
-                    "{} {} {} {} {} {}",
-                    item.polygon_index, item.time, item.width, item.height, item.x, item.y
-                );
+                // // option 2 better
+                // let text = format!(
+                //     "{} {} {} {} {} {}",
+                //     item.polygon_index, item.time, item.width, item.height, item.x, item.y
+                // );
 
                 // option 3 best?
                 // The polygon index is 1, the time is 2, the width is 3, the height is 4, the x-coordinate is 5, and the y-coordinate is 6.
@@ -178,6 +178,23 @@ impl Dataset<TextGenerationItem> for MotionDataset {
                 //     "{} {} {} {} {} {}",
                 //     item.polygon_index, item.time, item.width, item.height, item.x, item.y
                 // );
+
+                let window_size = 5;
+                let start_idx = index.saturating_sub(window_size / 2);
+                let end_idx = (index + window_size / 2).min(self.dataset.len());
+
+                let mut window_texts = Vec::new();
+
+                for i in start_idx..end_idx {
+                    if let Some(item) = self.dataset.get(i) {
+                        window_texts.push(format!(
+                            "{} {} {} {} {} {}",
+                            item.polygon_index, item.time, item.width, item.height, item.x, item.y
+                        ));
+                    }
+                }
+
+                let text = window_texts.join("\n");
 
                 TextGenerationItem::new(text)
             })

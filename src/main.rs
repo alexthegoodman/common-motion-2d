@@ -11,7 +11,10 @@ type Backend = burn::backend::Autodiff<Wgpu>;
 fn main() {
     let config = ExperimentConfig::new(
         // burn::nn::transformer::TransformerEncoderConfig::new(384, 1536, 12, 6)
-        burn::nn::transformer::TransformerEncoderConfig::new(128, 512, 4, 2).with_norm_first(true),
+        //     .with_norm_first(true),
+        // burn::nn::transformer::TransformerEncoderConfig::new(128, 512, 4, 2).with_norm_first(true),
+        burn::nn::transformer::TransformerEncoderConfig::new(384, 1536, 64, 6)
+            .with_norm_first(true),
         burn::optim::AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(1.0e-6))),
         // burn::optim::AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(1.0e-2))),
     );

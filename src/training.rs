@@ -27,11 +27,11 @@ pub struct ExperimentConfig {
     pub transformer: TransformerEncoderConfig,
     pub optimizer: AdamConfig,
     #[config(default = 512)]
+    // #[config(default = 32)]
     pub max_seq_length: usize,
     #[config(default = 6)]
     pub batch_size: usize,
-    // #[config(default = 50)]
-    #[config(default = 8)]
+    #[config(default = 50)]
     pub num_epochs: usize,
 }
 
@@ -66,11 +66,11 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
         // .build(SamplerDataset::new(dataset_test, 1000));
         .build(SamplerDataset::new(dataset_test, 1050));
 
-    let accum = 6; // Effective batch size = 6 * 6 = 32.
+    let accum = 6; // Effective batch size = 6 * 6 = 32. 32 is the "best maximum"
     let optim = config.optimizer.init();
     let lr_scheduler = NoamLrSchedulerConfig::new(0.01 / accum as f64)
-        // .with_warmup_steps(6000)
-        .with_warmup_steps(2000)
+        .with_warmup_steps(6000)
+        // .with_warmup_steps(2000)
         .with_model_size(config.transformer.d_model)
         .init();
 
