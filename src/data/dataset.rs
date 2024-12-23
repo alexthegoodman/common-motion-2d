@@ -188,7 +188,7 @@ impl Dataset<TextGenerationItem> for MotionDataset {
                 for i in start_idx..end_idx {
                     if let Some(item) = self.dataset.get(i) {
                         window_texts.push(format!(
-                            "{} {} {} {} {} {}",
+                            "{} {} {} {} {} {} ", // space at end could be important for parsing
                             item.polygon_index, item.time, item.width, item.height, item.x, item.y
                         ));
                     }

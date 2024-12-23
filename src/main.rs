@@ -13,7 +13,7 @@ fn main() {
         // burn::nn::transformer::TransformerEncoderConfig::new(384, 1536, 12, 6)
         //     .with_norm_first(true),
         // burn::nn::transformer::TransformerEncoderConfig::new(128, 512, 4, 2).with_norm_first(true),
-        burn::nn::transformer::TransformerEncoderConfig::new(384, 1536, 64, 6)
+        burn::nn::transformer::TransformerEncoderConfig::new(2048, 8192, 32, 6)
             .with_norm_first(true),
         burn::optim::AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(1.0e-6))),
         // burn::optim::AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(1.0e-2))),
@@ -28,11 +28,11 @@ fn main() {
     );
 
     // let mut text_items = Vec::new();
-    // text_items.push("0, 5, 300, 100, 305, 217".to_string());
-    // text_items.push("1, 5, 200, 300, 50, 70".to_string());
-    // text_items.push("2, 5, 100, 100, 304, 116".to_string());
+    // text_items.push("0 5 300 100 305 217 \n1 5 200 300 50 70 \n2 5 100 100 304 116 ".to_string());
+    // // text_items.push("1 5 200 300 50 70".to_string());
+    // // text_items.push("2 5 100 100 304 116".to_string());
 
     // let device = burn::tensor::Device::<Backend>::DiscreteGpu(0);
 
-    // infer_from_text::<Backend>("/tmp/text-generation", &device, text_items);
+    // infer_from_text::<Backend>("/tmp/text-generation", &device, text_items, 100, 0.5);
 }
