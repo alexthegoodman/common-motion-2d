@@ -26,8 +26,8 @@ use std::sync::Arc;
 pub struct ExperimentConfig {
     pub transformer: TransformerEncoderConfig,
     pub optimizer: AdamConfig,
-    #[config(default = 512)]
-    // #[config(default = 32)]
+    // #[config(default = 512)]
+    #[config(default = 1024)]
     pub max_seq_length: usize,
     #[config(default = 6)]
     pub batch_size: usize,
@@ -58,13 +58,15 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
         .batch_size(config.batch_size)
         .num_workers(4)
         // .build(SamplerDataset::new(dataset_train, 10_000));
-        .build(SamplerDataset::new(dataset_train, 4326));
+        // .build(SamplerDataset::new(dataset_train, 4326));
+        .build(SamplerDataset::new(dataset_train, 190));
 
     let dataloader_test = DataLoaderBuilder::new(batcher_test)
         .batch_size(config.batch_size)
         .num_workers(4)
         // .build(SamplerDataset::new(dataset_test, 1000));
-        .build(SamplerDataset::new(dataset_test, 1050));
+        // .build(SamplerDataset::new(dataset_test, 1050));
+        .build(SamplerDataset::new(dataset_test, 45));
 
     let accum = 6; // Effective batch size = 6 * 6 = 32. 32 is the "best maximum"
     let optim = config.optimizer.init();

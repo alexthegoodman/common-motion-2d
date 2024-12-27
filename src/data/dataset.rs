@@ -52,96 +52,169 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct MotionPaths {
-    #[serde(rename = "POLYGON_INDEX")]
-    pub polygon_index: i32,
+// #[derive(Deserialize, Serialize, Debug, Clone)]
+// pub struct MotionPaths {
+//     #[serde(rename = "POLYGON_INDEX")]
+//     pub polygon_index: i32,
 
-    #[serde(rename = "TIME")]
-    pub time: f32,
+//     #[serde(rename = "TIME")]
+//     pub time: f32,
 
-    #[serde(rename = "WIDTH")]
-    pub width: i32,
+//     #[serde(rename = "WIDTH")]
+//     pub width: i32,
 
-    #[serde(rename = "HEIGHT")]
-    pub height: i32,
+//     #[serde(rename = "HEIGHT")]
+//     pub height: i32,
 
-    #[serde(rename = "X")]
-    pub x: i32,
+//     #[serde(rename = "X")]
+//     pub x: i32,
 
-    #[serde(rename = "Y")]
-    pub y: i32,
-}
+//     #[serde(rename = "Y")]
+//     pub y: i32,
+// }
+
+// pub struct MotionDataset {
+//     dataset: InMemDataset<MotionPaths>,
+// }
+
+// impl MotionDataset {
+//     pub fn new() -> Result<Self, std::io::Error> {
+//         // Download dataset csv file
+//         let path = MotionDataset::download_train();
+
+//         let mut rdr = csv::ReaderBuilder::new();
+//         // let rdr = rdr.delimiter(b'\t'); // we can use default , deliminator
+
+//         let dataset = InMemDataset::from_csv(path, &rdr).unwrap();
+
+//         let dataset = Self { dataset };
+
+//         Ok(dataset)
+//     }
+
+//     pub fn train() -> Result<Self, std::io::Error> {
+//         // Download dataset csv file
+//         let path = MotionDataset::download_train();
+
+//         let mut rdr = csv::ReaderBuilder::new();
+//         let rdr = rdr.has_headers(false);
+//         // let rdr = rdr.delimiter(b'\t'); // we can use default , deliminator
+
+//         let dataset = InMemDataset::from_csv(path, &rdr).unwrap();
+
+//         let dataset = Self { dataset };
+
+//         Ok(dataset)
+//     }
+
+//     pub fn test() -> Result<Self, std::io::Error> {
+//         // Download dataset csv file
+//         let path = MotionDataset::download_test();
+
+//         let mut rdr = csv::ReaderBuilder::new();
+//         let rdr = rdr.has_headers(false);
+//         // let rdr = rdr.delimiter(b'\t'); // we can use default , deliminator
+
+//         let dataset = InMemDataset::from_csv(path, &rdr).unwrap();
+
+//         let dataset = Self { dataset };
+
+//         Ok(dataset)
+//     }
+
+//     fn download_train() -> PathBuf {
+//         // Point file to current example directory
+//         let backup_dir = Path::new("backup");
+//         let file_name = backup_dir.join("train.csv");
+
+//         if file_name.exists() {
+//             println!("File already downloaded at {:?}", file_name);
+//         };
+
+//         file_name
+//     }
+
+//     fn download_test() -> PathBuf {
+//         // Point file to current example directory
+//         let backup_dir = Path::new("backup");
+//         let file_name = backup_dir.join("test.csv");
+
+//         if file_name.exists() {
+//             println!("File already downloaded at {:?}", file_name);
+//         };
+
+//         file_name
+//     }
+// }
+
+use std::io::{self, BufRead, BufReader};
 
 pub struct MotionDataset {
-    dataset: InMemDataset<MotionPaths>,
+    dataset: InMemDataset<String>,
 }
 
 impl MotionDataset {
-    pub fn new() -> Result<Self, std::io::Error> {
-        // Download dataset csv file
-        let path = MotionDataset::download_train();
-
-        let mut rdr = csv::ReaderBuilder::new();
-        // let rdr = rdr.delimiter(b'\t'); // we can use default , deliminator
-
-        let dataset = InMemDataset::from_csv(path, &rdr).unwrap();
-
-        let dataset = Self { dataset };
-
-        Ok(dataset)
+    pub fn new() -> Result<Self, io::Error> {
+        Self::train()
     }
 
-    pub fn train() -> Result<Self, std::io::Error> {
-        // Download dataset csv file
+    pub fn train() -> Result<Self, io::Error> {
         let path = MotionDataset::download_train();
-
-        let mut rdr = csv::ReaderBuilder::new();
-        let rdr = rdr.has_headers(false);
-        // let rdr = rdr.delimiter(b'\t'); // we can use default , deliminator
-
-        let dataset = InMemDataset::from_csv(path, &rdr).unwrap();
-
-        let dataset = Self { dataset };
-
-        Ok(dataset)
+        let dataset = Self::load_txt_dataset(&path)?;
+        Ok(Self { dataset })
     }
 
-    pub fn test() -> Result<Self, std::io::Error> {
-        // Download dataset csv file
+    pub fn test() -> Result<Self, io::Error> {
         let path = MotionDataset::download_test();
+        let dataset = Self::load_txt_dataset(&path)?;
+        Ok(Self { dataset })
+    }
 
-        let mut rdr = csv::ReaderBuilder::new();
-        let rdr = rdr.has_headers(false);
-        // let rdr = rdr.delimiter(b'\t'); // we can use default , deliminator
+    fn load_txt_dataset(path: &Path) -> Result<InMemDataset<String>, io::Error> {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        let mut sequences = Vec::new();
+        let mut current_sequence = String::new();
 
-        let dataset = InMemDataset::from_csv(path, &rdr).unwrap();
+        for line in reader.lines() {
+            let line = line?;
+            if line.trim() == "---" {
+                if !current_sequence.is_empty() {
+                    sequences.push(current_sequence);
+                    current_sequence = String::new();
+                }
+            } else if !line.trim().is_empty() {
+                current_sequence.push_str(&line);
+                current_sequence.push(','); // comma delimiter to separate lines clearly
+                current_sequence.push('\n');
+            }
+        }
 
-        let dataset = Self { dataset };
+        if !current_sequence.is_empty() {
+            sequences.push(current_sequence);
+        }
 
-        Ok(dataset)
+        Ok(InMemDataset::new(sequences))
     }
 
     fn download_train() -> PathBuf {
-        // Point file to current example directory
         let backup_dir = Path::new("backup");
-        let file_name = backup_dir.join("train.csv");
+        let file_name = backup_dir.join("train.txt");
 
         if file_name.exists() {
             println!("File already downloaded at {:?}", file_name);
-        };
+        }
 
         file_name
     }
 
     fn download_test() -> PathBuf {
-        // Point file to current example directory
         let backup_dir = Path::new("backup");
-        let file_name = backup_dir.join("test.csv");
+        let file_name = backup_dir.join("test.txt");
 
         if file_name.exists() {
             println!("File already downloaded at {:?}", file_name);
-        };
+        }
 
         file_name
     }
@@ -179,24 +252,25 @@ impl Dataset<TextGenerationItem> for MotionDataset {
                 //     item.polygon_index, item.time, item.width, item.height, item.x, item.y
                 // );
 
-                let window_size = 5;
-                let start_idx = index.saturating_sub(window_size / 2);
-                let end_idx = (index + window_size / 2).min(self.dataset.len());
+                // when pulling line by line
+                // let window_size = 5;
+                // let start_idx = index.saturating_sub(window_size / 2);
+                // let end_idx = (index + window_size / 2).min(self.dataset.len());
 
-                let mut window_texts = Vec::new();
+                // let mut window_texts = Vec::new();
 
-                for i in start_idx..end_idx {
-                    if let Some(item) = self.dataset.get(i) {
-                        window_texts.push(format!(
-                            "{} {} {} {} {} {} ", // space at end could be important for parsing
-                            item.polygon_index, item.time, item.width, item.height, item.x, item.y
-                        ));
-                    }
-                }
+                // for i in start_idx..end_idx {
+                //     if let Some(item) = self.dataset.get(i) {
+                //         window_texts.push(format!(
+                //             "{} {} {} {} {} {} ", // space at end could be important for parsing
+                //             item.polygon_index, item.time, item.width, item.height, item.x, item.y
+                //         ));
+                //     }
+                // }
 
-                let text = window_texts.join("\n");
+                // let text = window_texts.join("\n");
 
-                TextGenerationItem::new(text)
+                TextGenerationItem::new(item)
             })
     }
 
