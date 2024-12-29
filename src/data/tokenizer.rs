@@ -17,11 +17,11 @@ pub trait Tokenizer: Send + Sync {
     }
 }
 
-pub struct Gpt2Tokenizer {
+pub struct NumericalTokenizer {
     tokenizer: tokenizers::Tokenizer,
 }
 
-impl Default for Gpt2Tokenizer {
+impl Default for NumericalTokenizer {
     fn default() -> Self {
         // let mut tokenizer = tokenizers::Tokenizer::from_pretrained("gpt2", None).unwrap();
         let mut tokenizer = tokenizers::Tokenizer::from_file(
@@ -43,7 +43,7 @@ impl Default for Gpt2Tokenizer {
     }
 }
 
-impl Tokenizer for Gpt2Tokenizer {
+impl Tokenizer for NumericalTokenizer {
     fn encode(&self, value: &str, special_tokens: bool) -> Vec<usize> {
         let text = match special_tokens {
             true => "[START]".to_owned() + value + "[END]",
@@ -72,6 +72,17 @@ impl Tokenizer for Gpt2Tokenizer {
 
     fn end_token(&self) -> usize {
         self.tokenizer.token_to_id("[END]").unwrap() as usize
+    }
+}
+
+impl NumericalTokenizer {
+    pub fn pad(&self, tokens: Vec<usize>, max_length: usize) -> Vec<usize> {
+        let pad_token = self.pad_token();
+        let mut padded_tokens = tokens;
+        while padded_tokens.len() < max_length {
+            padded_tokens.push(pad_token);
+        }
+        padded_tokens
     }
 }
 

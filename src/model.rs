@@ -118,6 +118,67 @@ impl<B: Backend> TextGenerationModel<B> {
         // Return logits in shape [batch_size, seq_length, vocab_size]
         self.output.forward(encoded)
     }
+
+    pub fn forward_inference_sequential(
+        &self,
+        item: TrainingTextGenerationBatch<B>,
+        sequence_length: usize,
+    ) -> Tensor<B, 3> {
+        let [batch_size, seq_length] = item.tokens_inputs.dims();
+        let device = &self.devices()[0];
+
+        let inputs = item.tokens_inputs.to_device(device);
+        let mask_pad = item.mask_pad.to_device(device);
+
+        let index_positions = Tensor::arange(0..seq_length as i64, device)
+            .reshape([1, seq_length])
+            .repeat_dim(0, batch_size);
+
+        let embedding_positions = self.embedding_pos.forward(index_positions);
+        let embedding_tokens = self.embedding_token.forward(inputs);
+        let embedding = (embedding_positions + embedding_tokens) / 2;
+
+        let mask_attn = generate_autoregressive_mask::<B>(batch_size, sequence_length, device);
+        let encoded = self.transformer.forward(
+            TransformerEncoderInput::new(embedding)
+                .mask_pad(mask_pad)
+                .mask_attn(mask_attn),
+        );
+
+        // Return logits in shape [batch_size, sequence_length, vocab_size]
+        self.output.forward(encoded)
+    }
+
+    pub fn forward_inference_sequential_2(
+        &self,
+        item: TrainingTextGenerationBatch<B>,
+    ) -> Tensor<B, 3> {
+        let [batch_size, seq_length] = item.tokens_inputs.dims();
+        let device = &self.devices()[0];
+
+        let inputs = item.tokens_inputs.to_device(device);
+        let mask_pad = item.mask_pad.to_device(device);
+
+        // Use actual sequence length for positional embeddings
+        let index_positions = Tensor::arange(0..seq_length as i64, device)
+            .reshape([1, seq_length])
+            .repeat_dim(0, batch_size);
+
+        let embedding_positions = self.embedding_pos.forward(index_positions);
+        let embedding_tokens = self.embedding_token.forward(inputs);
+        let embedding = (embedding_positions + embedding_tokens) / 2;
+
+        // Generate causal mask for current sequence length
+        let mask_attn = generate_autoregressive_mask::<B>(batch_size, seq_length, device);
+
+        let encoded = self.transformer.forward(
+            TransformerEncoderInput::new(embedding)
+                .mask_pad(mask_pad)
+                .mask_attn(mask_attn),
+        );
+
+        self.output.forward(encoded)
+    }
 }
 
 impl<B: AutodiffBackend> TrainStep<TrainingTextGenerationBatch<B>, ClassificationOutput<B>>

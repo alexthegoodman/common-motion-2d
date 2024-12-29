@@ -1,7 +1,7 @@
 use crate::{
     data::batcher::TextGenerationBatcher,
     data::dataset::TextGenerationItem,
-    data::tokenizer::{Gpt2Tokenizer, Tokenizer},
+    data::tokenizer::{NumericalTokenizer, Tokenizer},
     model::TextGenerationModelConfig,
 };
 use burn::{
@@ -42,7 +42,7 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
     config: ExperimentConfig,
     artifact_dir: &str,
 ) {
-    let tokenizer = Arc::new(Gpt2Tokenizer::default());
+    let tokenizer = Arc::new(NumericalTokenizer::default());
     let batcher_train = TextGenerationBatcher::new(tokenizer.clone(), config.max_seq_length);
     let batcher_test = TextGenerationBatcher::new(tokenizer.clone(), config.max_seq_length);
 
