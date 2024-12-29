@@ -186,6 +186,7 @@ impl MotionDataset {
             } else if !line.trim().is_empty() {
                 current_sequence.push_str(&line);
                 current_sequence.push(','); // comma delimiter to separate lines clearly
+                current_sequence.push(' '); // space for consistency and separation
                 current_sequence.push('\n');
             }
         }

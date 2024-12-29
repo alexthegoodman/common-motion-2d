@@ -9,32 +9,42 @@ type Elem = f32;
 type Backend = burn::backend::Autodiff<Wgpu>;
 
 fn main() {
-    let config = ExperimentConfig::new(
-        // burn::nn::transformer::TransformerEncoderConfig::new(384, 1536, 12, 6)
-        //     .with_norm_first(true),
-        // burn::nn::transformer::TransformerEncoderConfig::new(128, 512, 4, 2).with_norm_first(true),
-        // burn::nn::transformer::TransformerEncoderConfig::new(768, 3072, 16, 6)
-        //     .with_norm_first(true),
-        burn::nn::transformer::TransformerEncoderConfig::new(384, 1536, 12, 12)
-            .with_norm_first(true),
-        burn::optim::AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(1.0e-6))),
-        // burn::optim::AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(1.0e-2))),
+    // let config = ExperimentConfig::new(
+    //     // burn::nn::transformer::TransformerEncoderConfig::new(384, 1536, 12, 6)
+    //     //     .with_norm_first(true),
+    //     // burn::nn::transformer::TransformerEncoderConfig::new(128, 512, 4, 4).with_norm_first(true),
+    //     // burn::nn::transformer::TransformerEncoderConfig::new(768, 3072, 16, 6)
+    //     //     .with_norm_first(true),
+    //     burn::nn::transformer::TransformerEncoderConfig::new(768, 3072, 12, 6)
+    //         .with_norm_first(true),
+    //     // burn::optim::AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(1.0e-6))),
+    //     burn::optim::AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(1.0e-8))),
+    //     // burn::optim::AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(1.0e-2))),
+    // );
+
+    // common_motion_2d::training::train::<Backend, MotionDataset>(
+    //     burn::tensor::Device::<Backend>::DiscreteGpu(0),
+    //     MotionDataset::train().expect("Couldn't load training set"),
+    //     MotionDataset::test().expect("Couldn't load test set"),
+    //     config,
+    //     "/tmp/text-generation",
+    // );
+
+    let mut text_items = Vec::new();
+    text_items.push(
+        "0, 5, 300, 100, 305, 217, \n1, 5, 200, 300, 50, 70, \n2, 5, 100, 100, 304, 116, "
+            .to_string(),
     );
+    // text_items.push("1 5 200 300 50 70 ".to_string());
+    // text_items.push("2 5 100 100 304 116 ".to_string());
 
-    common_motion_2d::training::train::<Backend, MotionDataset>(
-        burn::tensor::Device::<Backend>::DiscreteGpu(0),
-        MotionDataset::train().expect("Couldn't load training set"),
-        MotionDataset::test().expect("Couldn't load test set"),
-        config,
-        "/tmp/text-generation",
+    let device = burn::tensor::Device::<Backend>::DiscreteGpu(0);
+
+    infer_from_text::<Backend>(
+        "/tmp/text-generation-e16-full-all-spaces",
+        &device,
+        text_items,
+        // 512,
+        // 1.0, // 1.0 should have no effect
     );
-
-    // let mut text_items = Vec::new();
-    // text_items.push("0 5 300 100 305 217 \n1 5 200 300 50 70 \n2 5 100 100 304 116 ".to_string());
-    // // text_items.push("1 5 200 300 50 70 ".to_string());
-    // // text_items.push("2 5 100 100 304 116 ".to_string());
-
-    // let device = burn::tensor::Device::<Backend>::DiscreteGpu(0);
-
-    // infer_from_text::<Backend>("/tmp/text-generation", &device, text_items, 100, 0.5);
 }

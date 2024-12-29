@@ -9,7 +9,7 @@ use burn::{
         dataloader::DataLoaderBuilder,
         dataset::{transform::SamplerDataset, Dataset},
     },
-    lr_scheduler::noam::NoamLrSchedulerConfig,
+    lr_scheduler::{self, constant::ConstantLr, noam::NoamLrSchedulerConfig},
     nn::transformer::TransformerEncoderConfig,
     optim::AdamConfig,
     prelude::*,
@@ -26,10 +26,10 @@ use std::sync::Arc;
 pub struct ExperimentConfig {
     pub transformer: TransformerEncoderConfig,
     pub optimizer: AdamConfig,
-    // #[config(default = 512)]
-    #[config(default = 1024)]
+    #[config(default = 512)]
+    // #[config(default = 1024)]
     pub max_seq_length: usize,
-    #[config(default = 6)]
+    #[config(default = 1)]
     pub batch_size: usize,
     #[config(default = 50)]
     pub num_epochs: usize,
@@ -68,13 +68,18 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
         // .build(SamplerDataset::new(dataset_test, 1050));
         .build(SamplerDataset::new(dataset_test, 45));
 
-    let accum = 6; // Effective batch size = 6 * 6 = 32. 32 is the "best maximum"
+    let accum = 1; // Effective batch size = 6 * 6 = 32. 32 is the "best maximum"
     let optim = config.optimizer.init();
-    let lr_scheduler = NoamLrSchedulerConfig::new(0.01 / accum as f64)
-        .with_warmup_steps(6000)
-        // .with_warmup_steps(2000)
-        .with_model_size(config.transformer.d_model)
-        .init();
+    // let lr_scheduler = NoamLrSchedulerConfig::new(0.01 / accum as f64)
+    //     .with_warmup_steps(6000)
+    //     // .with_warmup_steps(2000)
+    //     .with_model_size(config.transformer.d_model)
+    //     .init();
+    // let lr_scheduler = ConstantLr::new(0.00000001); // no learning noted
+    // let lr_scheduler = ConstantLr::new(0.01); // spike followed by decrease
+    let lr_scheduler = ConstantLr::new(0.00001); // fast learning, quick to stabilize loss at around 1.57
+                                                 // let lr_scheduler = ConstantLr::new(0.000001); // slightly slower, but quick to stabilize loss at around 1.73
+                                                 // let lr_scheduler = ConstantLr::new(0.0000001); // no learning
 
     let learner = LearnerBuilder::new(artifact_dir)
         .metric_train(CudaMetric::new())

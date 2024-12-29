@@ -25,7 +25,7 @@ impl Default for Gpt2Tokenizer {
     fn default() -> Self {
         // let mut tokenizer = tokenizers::Tokenizer::from_pretrained("gpt2", None).unwrap();
         let mut tokenizer = tokenizers::Tokenizer::from_file(
-            "D:/projects/common/common-motion-2d/backup/tokenizer.json",
+            "D:/projects/common/common-motion-2d/backup/tokenizer-all.json",
         )
         .unwrap();
         tokenizer.add_special_tokens(&[
