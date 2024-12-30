@@ -7,8 +7,8 @@ use crate::{
     model::TextGenerationModelConfig,
     training::ExperimentConfig,
 };
-use burn::config::Config;
 use burn::data::dataloader::batcher::Batcher;
+use burn::{config::Config, tensor::Int};
 use burn::{
     module::Module,
     record::{CompactRecorder, Recorder},
@@ -18,6 +18,7 @@ use std::{path::Path, sync::Arc};
 
 use crate::{data::tokenizer::NumericalTokenizer, model::TextGenerationModel};
 
+// batch inference
 // pub fn infer_from_text<B: Backend>(artifact_dir: &str, device: &B::Device, texts: Vec<String>) {
 //     // Load experiment configuration
 //     let config = ExperimentConfig::load(format!("{artifact_dir}/config.json").as_str())
@@ -102,6 +103,7 @@ use crate::{data::tokenizer::NumericalTokenizer, model::TextGenerationModel};
 //     }
 // }
 
+// // sequential inference
 pub fn infer_from_text<B: Backend>(
     artifact_dir: &str,
     device: &B::Device,
@@ -155,11 +157,16 @@ pub fn infer_from_text<B: Backend>(
             );
 
             // Prepare input batch
-            let batch =
-                prepare_inference_batch::<B>(&current_tokens, prompt_length, &tokenizer, device);
+            let batch = prepare_inference_batch::<B>(
+                &current_tokens,
+                prompt_length,
+                // tokenizer.clone(),
+                max_new_tokens,
+                device,
+            );
 
             // Get model output for the current sequence
-            let encoded = model.forward_inference(batch);
+            let encoded = model.forward_inference_sequential(batch);
 
             // Get predictions for the last token
             let last_token_logits = encoded.slice([
@@ -178,8 +185,10 @@ pub fn infer_from_text<B: Backend>(
             // Convert to probabilities
             let probs = softmax(scaled_logits, 2);
 
+            let squeeze_probs: Tensor<B, 2> = probs.squeeze(0);
+
             // Sample from the distribution
-            let next_token = sample_from_probs::<B>(probs.squeeze(0).squeeze(0));
+            let next_token = sample_from_probs::<B>(squeeze_probs.squeeze(0));
 
             // Append the new token
             current_tokens.push(next_token);
@@ -200,38 +209,50 @@ pub fn infer_from_text<B: Backend>(
 fn prepare_inference_batch<B: Backend>(
     tokens: &[usize],
     prompt_length: usize,
-    tokenizer: &Arc<dyn Tokenizer>,
+    max_new_tokens: usize,
     device: &B::Device,
 ) -> TextGenerationBatch<B> {
-    let tensor = Tensor::from_slice(tokens, device).reshape([1, tokens.len()]);
+    // Create prompt tensors
+    let prompt_tokens = Tensor::<B, 2, Int>::from_ints(&tokens[..prompt_length], device)
+        .reshape([1, prompt_length]);
+    let prompt_mask = Tensor::<B, 2, Int>::ones([1, prompt_length], device).bool();
 
-    let mask = Tensor::ones([1, tokens.len()], device);
+    // Create empty completion tensors
+    let max_completion_length = max_new_tokens;
+    // let completion_length = tokens.len() - prompt_length;
+    let completion_length = max_completion_length;
+    let completion_tokens = Tensor::zeros([1, completion_length], device);
+    let completion_mask = Tensor::<B, 2, Int>::zeros([1, completion_length], device).bool();
 
-    TextGenerationBatch {
-        tokens: tensor,
-        mask_pad: mask,
-    }
+    TextGenerationBatch::new(
+        prompt_tokens,
+        completion_tokens,
+        prompt_mask,
+        completion_mask,
+    )
 }
 
 // Helper function to sample from probability distribution
 fn sample_from_probs<B: Backend>(probs: Tensor<B, 1>) -> usize {
     // Convert probabilities to CPU for sampling
     let probs_data = probs.to_data();
+    let probs_slice: &[f32] = probs_data
+        .as_slice()
+        .expect("Could not get slice from tensor");
 
-    // Implementation depends on your random number generator choice
-    // Here's a simple example using rand crate:
     use rand::Rng;
     let mut rng = rand::thread_rng();
     let r: f32 = rng.gen();
 
-    let mut cumsum = 0.0;
-    for (idx, &p) in probs_data.as_slice().iter().enumerate() {
-        cumsum += p;
+    let mut cumsum = 0.0_f32;
+    for (idx, p) in probs_slice.iter().enumerate() {
+        // Convert the tensor data to f32 explicitly
+        cumsum += *p as f32;
         if r < cumsum {
             return idx;
         }
     }
 
     // Fallback to last token if sampling fails
-    probs_data.len() - 1
+    probs_slice.len() - 1
 }

@@ -40,8 +40,11 @@ impl TextGenerationModelConfig {
         let transformer = self.transformer.init(device);
         let embedding_token =
             EmbeddingConfig::new(self.vocab_size, self.transformer.d_model).init(device);
+
+        // Use combined length for positional embeddings
+        let total_seq_length = self.max_prompt_len + self.max_completion_len;
         let embedding_pos =
-            EmbeddingConfig::new(self.max_seq_length, self.transformer.d_model).init(device);
+            EmbeddingConfig::new(total_seq_length, self.transformer.d_model).init(device);
 
         TextGenerationModel {
             transformer,
@@ -191,8 +194,8 @@ impl<B: Backend> TextGenerationModel<B> {
     //     self.output.forward(encoded)
     // }
 
-    pub fn forward_inference(&self, batch: TextGenerationBatch<B>) -> Tensor<B, 3> {
-        let [batch_size, seq_length] = batch.tokens.dims();
+    pub fn forward_inference_sequential(&self, batch: TextGenerationBatch<B>) -> Tensor<B, 3> {
+        let [batch_size, seq_length] = batch.prompt_tokens.dims();
         let device = &self.devices()[0];
 
         let index_positions = Tensor::arange(0..seq_length as i64, device)
@@ -200,7 +203,7 @@ impl<B: Backend> TextGenerationModel<B> {
             .repeat_dim(0, batch_size);
 
         let embedding_positions = self.embedding_pos.forward(index_positions);
-        let embedding_tokens = self.embedding_token.forward(batch.tokens);
+        let embedding_tokens = self.embedding_token.forward(batch.prompt_tokens);
         let embedding = (embedding_positions + embedding_tokens) / 2;
 
         // Create causal attention mask
@@ -208,7 +211,7 @@ impl<B: Backend> TextGenerationModel<B> {
 
         let encoded = self.transformer.forward(
             TransformerEncoderInput::new(embedding)
-                .mask_pad(batch.mask_pad)
+                .mask_pad(batch.prompt_mask)
                 .mask_attn(mask_attn),
         );
 
@@ -235,7 +238,6 @@ impl<B: Backend> ValidStep<TrainingTextGenerationBatch<B>, ClassificationOutput<
     }
 }
 
-// Helper function to create attention mask for prompt-completion format
 fn generate_prompt_completion_mask<B: Backend>(
     batch_size: usize,
     prompt_length: usize,
@@ -243,32 +245,54 @@ fn generate_prompt_completion_mask<B: Backend>(
     device: &B::Device,
 ) -> Tensor<B, 3, Bool> {
     let total_length = prompt_length + completion_length;
-    let mut mask: Tensor<B, 2, Int> = Tensor::zeros([total_length, total_length], device);
 
-    // Prompt tokens can attend to all prompt tokens
-    mask = mask.slice([0..prompt_length, 0..prompt_length]).ones_like();
+    let rows: Tensor<B, 2, Int> = Tensor::arange(0..total_length as i64, device)
+        .reshape([total_length, 1])
+        .repeat_dim(1, total_length);
 
-    // // Completion tokens can attend to all prompt tokens and previous completion tokens
-    for i in prompt_length..total_length {
-        mask = mask.slice([i - 1..i, 0..i + 1]).ones_like();
-    }
+    let cols: Tensor<B, 2, Int> = Tensor::arange(0..total_length as i64, device)
+        .reshape([1, total_length])
+        .repeat_dim(0, total_length);
 
-    // Convert to boolean tensor and reshape to 3D
-    mask.greater_equal_elem(0.5) // Convert to boolean
-        .reshape([1, total_length, total_length]) // Changed to 3D
+    // Create numeric tensors for comparison (1 for true, 0 for false)
+    let prompt_rows = rows
+        .clone()
+        .lower_equal_elem(prompt_length as i64 - 1)
+        .int();
+    let prompt_cols = cols
+        .clone()
+        .lower_equal_elem(prompt_length as i64 - 1)
+        .int();
+    let prompt_mask = prompt_rows * prompt_cols;
+
+    let completion_rows = rows.clone().greater_equal_elem(prompt_length as i64).int();
+    let completion_cols = rows.greater_equal(cols).int();
+    let completion_mask = completion_rows * completion_cols;
+
+    // Convert back to boolean at the end
+    let mask =
+        (prompt_mask + completion_mask)
+            .greater_elem(0)
+            .reshape([1, total_length, total_length]);
+
+    mask
 }
 
-// Helper function for causal mask during inference
+// If you need a simpler version that just creates a causal mask:
 fn generate_causal_mask<B: Backend>(
     batch_size: usize,
     seq_length: usize,
     device: &B::Device,
 ) -> Tensor<B, 3, Bool> {
-    let mut mask: Tensor<B, 2, Int> = Tensor::zeros([seq_length, seq_length], device);
-    for i in 0..seq_length {
-        mask = mask.slice([i - 1..i, 0..i + 1]).ones_like();
-    }
+    let rows = Tensor::arange(0..seq_length as i64, device)
+        .reshape([seq_length, 1])
+        .repeat_dim(1, seq_length);
 
-    mask.greater_equal_elem(0.5)
+    let cols = Tensor::arange(0..seq_length as i64, device)
+        .reshape([1, seq_length])
+        .repeat_dim(0, seq_length);
+
+    // rows >= cols creates a lower triangular matrix (including diagonal)
+    rows.greater_equal(cols)
         .reshape([1, seq_length, seq_length])
 }
