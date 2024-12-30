@@ -43,14 +43,18 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
     artifact_dir: &str,
 ) {
     let tokenizer = Arc::new(NumericalTokenizer::default());
-    let batcher_train = TextGenerationBatcher::new(tokenizer.clone(), config.max_seq_length);
-    let batcher_test = TextGenerationBatcher::new(tokenizer.clone(), config.max_seq_length);
+    // let (max_prompt_len, max_completion_len) =
+    //     TextGenerationBatcher::get_max_lengths(&dataset_train, &tokenizer);
+    let batcher_train = TextGenerationBatcher::new(tokenizer.clone(), 128, 512);
+    let batcher_test = TextGenerationBatcher::new(tokenizer.clone(), 128, 512);
 
     let model = TextGenerationModelConfig::new(
         config.transformer.clone(),
         tokenizer.vocab_size(),
         tokenizer.pad_token(),
-        config.max_seq_length,
+        // config.max_seq_length,
+        128,
+        512,
     )
     .init::<B>(&device);
 
