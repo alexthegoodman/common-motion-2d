@@ -194,16 +194,49 @@ impl<B: Backend> TextGenerationModel<B> {
     //     self.output.forward(encoded)
     // }
 
-    pub fn forward_inference_sequential(&self, batch: TextGenerationBatch<B>) -> Tensor<B, 3> {
-        let [batch_size, seq_length] = batch.prompt_tokens.dims();
+    // pub fn forward_inference_sequential(&self, batch: TextGenerationBatch<B>) -> Tensor<B, 3> {
+    //     let [batch_size, seq_length] = batch.prompt_tokens.dims();
+    //     let device = &self.devices()[0];
+
+    //     let index_positions = Tensor::arange(0..seq_length as i64, device)
+    //         .reshape([1, seq_length])
+    //         .repeat_dim(0, batch_size);
+
+    //     let embedding_positions = self.embedding_pos.forward(index_positions);
+    //     let embedding_tokens = self.embedding_token.forward(batch.prompt_tokens);
+    //     let embedding = (embedding_positions + embedding_tokens) / 2;
+
+    //     // Create causal attention mask
+    //     let mask_attn = generate_causal_mask::<B>(batch_size, seq_length, device);
+
+    //     let encoded = self.transformer.forward(
+    //         TransformerEncoderInput::new(embedding)
+    //             .mask_pad(batch.prompt_mask)
+    //             .mask_attn(mask_attn),
+    //     );
+
+    //     self.output.forward(encoded)
+    // }
+
+    pub fn forward_inference_sequential(
+        &self,
+        batch: TextGenerationBatch<B>,
+        current_tokens: &[i32], // Changed to take current tokens directly
+        seq_length: usize,
+    ) -> Tensor<B, 3> {
+        let [batch_size, _] = batch.prompt_tokens.dims();
         let device = &self.devices()[0];
+
+        // Create tensor from current_tokens slice
+        let tokens_tensor =
+            Tensor::<B, 1, Int>::from_ints(current_tokens, device).reshape([1, seq_length]); // Reshape to [batch_size=1, seq_length]
 
         let index_positions = Tensor::arange(0..seq_length as i64, device)
             .reshape([1, seq_length])
             .repeat_dim(0, batch_size);
 
         let embedding_positions = self.embedding_pos.forward(index_positions);
-        let embedding_tokens = self.embedding_token.forward(batch.prompt_tokens);
+        let embedding_tokens = self.embedding_token.forward(tokens_tensor);
         let embedding = (embedding_positions + embedding_tokens) / 2;
 
         // Create causal attention mask

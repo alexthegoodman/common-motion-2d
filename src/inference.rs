@@ -148,13 +148,17 @@ pub fn infer_from_text<B: Backend>(
         let mut current_tokens = tokenizer.encode(&prompt, true);
         let prompt_length = current_tokens.len();
 
+        let mut seq_length = prompt_length;
+
         // Generate tokens one by one
         for _ in 0..max_new_tokens {
             // Create a TextGenerationItem with empty completion
-            let item = TextGenerationItem::new(
-                prompt.clone(),
-                String::new(), // empty completion since we're generating it
-            );
+            // let item = TextGenerationItem::new(
+            //     prompt.clone(),
+            //     String::new(), // empty completion since we're generating it
+            // );
+
+            // println!("Preparing batch...");
 
             // Prepare input batch
             let batch = prepare_inference_batch::<B>(
@@ -165,15 +169,24 @@ pub fn infer_from_text<B: Backend>(
                 device,
             );
 
+            println!("Running inference...");
+
+            // Convert usize slice to Ints
+            let int_tokens: Vec<i32> = current_tokens.iter().map(|&t| t as i32).collect();
+
             // Get model output for the current sequence
-            let encoded = model.forward_inference_sequential(batch);
+            let encoded = model.forward_inference_sequential(batch, &int_tokens, seq_length);
 
             // Get predictions for the last token
+            // println!("Slicing at position: {}", seq_length);
+
             let last_token_logits = encoded.slice([
                 0..1,
-                current_tokens.len() - 1..current_tokens.len(),
+                seq_length - 1..seq_length, // This ensures we're getting a slice of size 1
                 0..tokenizer.vocab_size(),
             ]);
+
+            // println!("Apply temperature...");
 
             // Apply temperature
             let scaled_logits = if temperature != 1.0 {
@@ -187,15 +200,27 @@ pub fn infer_from_text<B: Backend>(
 
             let squeeze_probs: Tensor<B, 2> = probs.squeeze(0);
 
+            // println!("Sampling from probabilities...");
+
             // Sample from the distribution
             let next_token = sample_from_probs::<B>(squeeze_probs.squeeze(0));
 
             // Append the new token
             current_tokens.push(next_token);
 
+            // println!("Incrementing sequence length...");
+
+            seq_length += 1;
+
             // Check for completion (e.g., if we generated an end token)
-            if next_token == tokenizer.end_token() {
-                break;
+            // if next_token == tokenizer.end_token() {
+            //     break;
+            // }
+
+            // Print current tokens every 10 tokens
+            if current_tokens.len() % 10 == 0 {
+                let generated_text = tokenizer.decode(&current_tokens[prompt_length..]);
+                println!("Generated so far: {}", generated_text);
             }
         }
 
@@ -213,7 +238,7 @@ fn prepare_inference_batch<B: Backend>(
     device: &B::Device,
 ) -> TextGenerationBatch<B> {
     // Create prompt tensors
-    let prompt_tokens = Tensor::<B, 2, Int>::from_ints(&tokens[..prompt_length], device)
+    let prompt_tokens = Tensor::<B, 1, Int>::from_ints(&tokens[..prompt_length], device)
         .reshape([1, prompt_length]);
     let prompt_mask = Tensor::<B, 2, Int>::ones([1, prompt_length], device).bool();
 
