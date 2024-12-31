@@ -175,7 +175,7 @@ impl MotionDataset {
 
     fn download_train() -> PathBuf {
         let backup_dir = Path::new("backup");
-        let file_name = backup_dir.join("train.txt");
+        let file_name = backup_dir.join("augmented.txt");
 
         if file_name.exists() {
             println!("File already downloaded at {:?}", file_name);

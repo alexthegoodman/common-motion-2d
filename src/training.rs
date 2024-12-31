@@ -11,7 +11,7 @@ use burn::{
     },
     lr_scheduler::{self, constant::ConstantLr, noam::NoamLrSchedulerConfig},
     nn::transformer::TransformerEncoderConfig,
-    optim::AdamConfig,
+    optim::{AdamConfig, AdamWConfig},
     prelude::*,
     record::{CompactRecorder, DefaultRecorder, Recorder},
     tensor::backend::AutodiffBackend,
@@ -25,7 +25,7 @@ use std::sync::Arc;
 #[derive(Config)]
 pub struct ExperimentConfig {
     pub transformer: TransformerEncoderConfig,
-    pub optimizer: AdamConfig,
+    pub optimizer: AdamWConfig,
     #[config(default = 512)]
     // #[config(default = 1024)]
     pub max_seq_length: usize,
@@ -61,13 +61,15 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
     let dataloader_train = DataLoaderBuilder::new(batcher_train)
         .batch_size(config.batch_size)
         .num_workers(4)
+        .shuffle(42)
         // .build(SamplerDataset::new(dataset_train, 10_000));
         // .build(SamplerDataset::new(dataset_train, 4326));
-        .build(SamplerDataset::new(dataset_train, 190));
+        .build(SamplerDataset::new(dataset_train, 950));
 
     let dataloader_test = DataLoaderBuilder::new(batcher_test)
         .batch_size(config.batch_size)
         .num_workers(4)
+        .shuffle(42)
         // .build(SamplerDataset::new(dataset_test, 1000));
         // .build(SamplerDataset::new(dataset_test, 1050));
         .build(SamplerDataset::new(dataset_test, 45));
@@ -81,7 +83,9 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
     //     .init();
     // let lr_scheduler = ConstantLr::new(0.00000001); // no learning noted
     // let lr_scheduler = ConstantLr::new(0.01); // spike followed by decrease
-    let lr_scheduler = ConstantLr::new(0.00001); // fast learning, quick to stabilize loss at around 1.57
+    // let lr_scheduler = ConstantLr::new(0.00001); // fast learning, quick to stabilize loss at around 1.57
+    let lr_scheduler = ConstantLr::new(0.00005); // better for batch size of 2, similar to 0.00001 at batch size of 1
+                                                 // let lr_scheduler = ConstantLr::new(0.0001); // slightly, odd
                                                  // let lr_scheduler = ConstantLr::new(0.000001); // slightly slower, but quick to stabilize loss at around 1.73
                                                  // let lr_scheduler = ConstantLr::new(0.0000001); // no learning
 
