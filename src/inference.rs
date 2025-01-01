@@ -283,12 +283,6 @@ pub fn infer_from_text<B: Backend>(
 
         // Generate tokens one by one
         for _ in 0..max_new_tokens {
-            // Create a TextGenerationItem with empty completion
-            // let item = TextGenerationItem::new(
-            //     prompt.clone(),
-            //     String::new(), // empty completion since we're generating it
-            // );
-
             // println!("Preparing batch...");
 
             // Prepare input batch
@@ -300,13 +294,15 @@ pub fn infer_from_text<B: Backend>(
                 device,
             );
 
-            println!("Running inference...");
+            // println!("Running inference...");
 
             // Convert usize slice to Ints
             let int_tokens: Vec<i32> = current_tokens.iter().map(|&t| t as i32).collect();
 
             // Get model output for the current sequence
             let encoded = model.forward_inference_sequential(batch, &int_tokens, seq_length);
+
+            println!("Encoded shape: {:?}", encoded.dims());
 
             // Get predictions for the last token
             // println!("Slicing at position: {}", seq_length);
@@ -375,7 +371,8 @@ fn prepare_inference_batch<B: Backend>(
 
     // Create empty completion tensors
     let max_completion_length = max_new_tokens;
-    // let completion_length = tokens.len() - prompt_length;
+    // at least 1
+    // let completion_length = (tokens.len() - prompt_length).max(1);
     let completion_length = max_completion_length;
     let completion_tokens = Tensor::zeros([1, completion_length], device);
     let completion_mask = Tensor::<B, 2, Int>::zeros([1, completion_length], device).bool();
@@ -409,6 +406,7 @@ fn sample_from_probs<B: Backend>(probs: Tensor<B, 1>) -> usize {
         }
     }
 
+    println!("Sampling failed, Fallback to last token...");
     // Fallback to last token if sampling fails
     probs_slice.len() - 1
 }
