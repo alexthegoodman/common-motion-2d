@@ -123,6 +123,61 @@ impl<B: Backend> Batcher<TextGenerationItem, TextGenerationBatch<B>> for TextGen
     }
 }
 
+// impl<B: Backend> Batcher<TextGenerationItem, TrainingTextGenerationBatch<B>>
+//     for TextGenerationBatcher
+// {
+//     fn batch(&self, items: Vec<TextGenerationItem>) -> TrainingTextGenerationBatch<B> {
+//         let batch: TextGenerationBatch<B> = self.batch(items);
+//         let device = &B::Device::default();
+
+//         // Get actual lengths from this batch
+//         let [batch_size, prompt_length] = batch.prompt_tokens.dims();
+//         let [_, completion_length] = batch.completion_tokens.dims();
+
+//         // Combine prompt and completion tokens
+//         let tokens = Tensor::cat(
+//             vec![
+//                 batch.prompt_tokens.clone(),
+//                 batch
+//                     .completion_tokens
+//                     .clone()
+//                     .slice([0..batch_size, 0..completion_length - 1]),
+//             ],
+//             1,
+//         );
+
+//         // Create targets by shifting completion tokens right and adding prompt tokens
+//         let targets = Tensor::cat(
+//             vec![
+//                 batch.prompt_tokens,
+//                 batch
+//                     .completion_tokens
+//                     .slice([0..batch_size, 1..completion_length]),
+//             ],
+//             1,
+//         );
+
+//         // Combine masks similarly
+//         let mask_pad = Tensor::cat(
+//             vec![
+//                 batch.prompt_mask,
+//                 batch
+//                     .completion_mask
+//                     .slice([0..batch_size, 0..completion_length - 1]),
+//             ],
+//             1,
+//         );
+
+//         TrainingTextGenerationBatch::new(
+//             tokens,
+//             targets,
+//             mask_pad,
+//             prompt_length,
+//             completion_length - 1, // -1 because we removed last token for shifting
+//         )
+//     }
+// }
+
 impl<B: Backend> Batcher<TextGenerationItem, TrainingTextGenerationBatch<B>>
     for TextGenerationBatcher
 {
@@ -134,46 +189,21 @@ impl<B: Backend> Batcher<TextGenerationItem, TrainingTextGenerationBatch<B>>
         let [batch_size, prompt_length] = batch.prompt_tokens.dims();
         let [_, completion_length] = batch.completion_tokens.dims();
 
-        // Combine prompt and completion tokens
-        let tokens = Tensor::cat(
-            vec![
-                batch.prompt_tokens.clone(),
-                batch
-                    .completion_tokens
-                    .clone()
-                    .slice([0..batch_size, 0..completion_length - 1]),
-            ],
-            1,
-        );
+        // Use only prompt tokens as input
+        let tokens = batch.prompt_tokens.clone();
 
-        // Create targets by shifting completion tokens right and adding prompt tokens
-        let targets = Tensor::cat(
-            vec![
-                batch.prompt_tokens,
-                batch
-                    .completion_tokens
-                    .slice([0..batch_size, 1..completion_length]),
-            ],
-            1,
-        );
+        // Use completion tokens as targets
+        let targets = batch.completion_tokens;
 
-        // Combine masks similarly
-        let mask_pad = Tensor::cat(
-            vec![
-                batch.prompt_mask,
-                batch
-                    .completion_mask
-                    .slice([0..batch_size, 0..completion_length - 1]),
-            ],
-            1,
-        );
+        // Use only prompt mask for inputs
+        let mask_pad = batch.prompt_mask;
 
         TrainingTextGenerationBatch::new(
             tokens,
             targets,
             mask_pad,
             prompt_length,
-            completion_length - 1, // -1 because we removed last token for shifting
+            completion_length,
         )
     }
 }

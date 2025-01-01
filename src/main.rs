@@ -42,5 +42,5 @@ fn main() {
     // //     1.0, // 1.0 should have no effect
     // // );
 
-    // infer_from_text_trainlike::<Backend>("/tmp/text-generation-e12-prompt", &device, prompts);
+    // infer_from_text_trainlike::<Backend>("/tmp/text-generation-e3-prompt-large", &device, prompts);
 }

@@ -102,69 +102,113 @@ impl<B: Backend> TextGenerationModel<B> {
     //     }
     // }
 
+    // pub fn forward_training(
+    //     &self,
+    //     item: TrainingTextGenerationBatch<B>,
+    // ) -> ClassificationOutput<B> {
+    //     let [batch_size, total_length] = item.tokens_inputs.dims();
+    //     let device = &self.devices()[0];
+
+    //     let inputs = item.tokens_inputs.to_device(device);
+    //     let targets = item.targets.to_device(device);
+    //     let mask_pad = item.mask_pad.to_device(device);
+
+    //     // Create position indices for the entire sequence
+    //     let index_positions = Tensor::arange(0..total_length as i64, device)
+    //         .reshape([1, total_length])
+    //         .repeat_dim(0, batch_size);
+
+    //     // Embeddings
+    //     let embedding_positions = self.embedding_pos.forward(index_positions);
+    //     let embedding_tokens = self.embedding_token.forward(inputs);
+    //     let embedding = (embedding_positions + embedding_tokens) / 2;
+
+    //     // Create causal attention mask that allows prompt tokens to attend to each other
+    //     // but completion tokens can only attend to prompt and previous completion tokens
+    //     let mask_attn = generate_prompt_completion_mask::<B>(
+    //         batch_size,
+    //         item.prompt_length,
+    //         item.completion_length,
+    //         device,
+    //     );
+
+    //     let encoded = self.transformer.forward(
+    //         TransformerEncoderInput::new(embedding)
+    //             .mask_pad(mask_pad)
+    //             .mask_attn(mask_attn),
+    //     );
+
+    //     let output = self.output.forward(encoded);
+
+    //     // We only want to compute loss on the completion portion
+    //     let completion_start = item.prompt_length;
+    //     let completion_end = completion_start + item.completion_length;
+
+    //     let output_completion = output
+    //         .slice([
+    //             0..batch_size,
+    //             completion_start..completion_end,
+    //             0..self.vocab_size,
+    //         ])
+    //         .reshape([batch_size * item.completion_length, self.vocab_size]);
+
+    //     let targets_completion = targets
+    //         .slice([0..batch_size, completion_start..completion_end])
+    //         .reshape([batch_size * item.completion_length]);
+
+    //     let loss = CrossEntropyLossConfig::new()
+    //         .with_pad_tokens(Some(vec![self.pad_token]))
+    //         .init(&output_completion.device());
+    //     let loss = loss.forward(output_completion.clone(), targets_completion.clone());
+
+    //     ClassificationOutput {
+    //         loss,
+    //         output: output_completion,
+    //         targets: targets_completion,
+    //     }
+    // }
+
     pub fn forward_training(
         &self,
         item: TrainingTextGenerationBatch<B>,
     ) -> ClassificationOutput<B> {
-        let [batch_size, total_length] = item.tokens_inputs.dims();
+        let [batch_size, prompt_length] = item.tokens_inputs.dims();
         let device = &self.devices()[0];
 
         let inputs = item.tokens_inputs.to_device(device);
         let targets = item.targets.to_device(device);
         let mask_pad = item.mask_pad.to_device(device);
 
-        // Create position indices for the entire sequence
-        let index_positions = Tensor::arange(0..total_length as i64, device)
-            .reshape([1, total_length])
+        // Create position indices for just the prompt
+        let index_positions = Tensor::arange(0..prompt_length as i64, device)
+            .reshape([1, prompt_length])
             .repeat_dim(0, batch_size);
 
-        // Embeddings
+        // Embeddings for prompt only
         let embedding_positions = self.embedding_pos.forward(index_positions);
         let embedding_tokens = self.embedding_token.forward(inputs);
         let embedding = (embedding_positions + embedding_tokens) / 2;
 
-        // Create causal attention mask that allows prompt tokens to attend to each other
-        // but completion tokens can only attend to prompt and previous completion tokens
-        let mask_attn = generate_prompt_completion_mask::<B>(
-            batch_size,
-            item.prompt_length,
-            item.completion_length,
-            device,
-        );
-
-        let encoded = self.transformer.forward(
-            TransformerEncoderInput::new(embedding)
-                .mask_pad(mask_pad)
-                .mask_attn(mask_attn),
-        );
+        // No need for causal mask since we're only encoding the prompt
+        let encoded = self
+            .transformer
+            .forward(TransformerEncoderInput::new(embedding).mask_pad(mask_pad));
 
         let output = self.output.forward(encoded);
 
-        // We only want to compute loss on the completion portion
-        let completion_start = item.prompt_length;
-        let completion_end = completion_start + item.completion_length;
-
-        let output_completion = output
-            .slice([
-                0..batch_size,
-                completion_start..completion_end,
-                0..self.vocab_size,
-            ])
-            .reshape([batch_size * item.completion_length, self.vocab_size]);
-
-        let targets_completion = targets
-            .slice([0..batch_size, completion_start..completion_end])
-            .reshape([batch_size * item.completion_length]);
+        // Reshape output and targets for loss computation
+        let output_reshaped = output.reshape([batch_size * prompt_length, self.vocab_size]);
+        let targets_reshaped = targets.reshape([batch_size * item.completion_length]);
 
         let loss = CrossEntropyLossConfig::new()
             .with_pad_tokens(Some(vec![self.pad_token]))
-            .init(&output_completion.device());
-        let loss = loss.forward(output_completion.clone(), targets_completion.clone());
+            .init(&output_reshaped.device());
+        let loss = loss.forward(output_reshaped.clone(), targets_reshaped.clone());
 
         ClassificationOutput {
             loss,
-            output: output_completion,
-            targets: targets_completion,
+            output: output_reshaped,
+            targets: targets_reshaped,
         }
     }
 
