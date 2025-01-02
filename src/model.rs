@@ -230,19 +230,16 @@ impl<B: Backend> TextGenerationModel<B> {
     // pub fn forward_inference_sequential(
     //     &self,
     //     batch: TextGenerationBatch<B>,
-    //     current_tokens: &[i32],
+    //     current_tokens: &[u32],
     //     seq_length: usize,
+    //     cache: &mut TransformerEncoderAutoregressiveCache<B>,
     // ) -> Tensor<B, 3> {
     //     let device = &self.devices()[0];
-
-    //     // Create tensor from current_tokens slice and reshape to [batch_size=1, seq_length]
+    //     // should be supplying only the token after input_pos anyway, so use whole current_tokens
     //     let tokens_tensor =
     //         Tensor::<B, 1, Int>::from_ints(current_tokens, device).reshape([1, seq_length]);
 
-    //     // Get token embeddings
     //     let embedding = self.embedding_token.forward(tokens_tensor);
-
-    //     // Apply rotary encoding
     //     let embedding = embedding.unsqueeze::<4>();
     //     let embedding_with_rope = self.rotary.forward(embedding);
     //     let embedding_with_rope = embedding_with_rope.squeeze::<3>(0);
@@ -250,11 +247,13 @@ impl<B: Backend> TextGenerationModel<B> {
     //     // Create causal attention mask for the full sequence
     //     let mask_attn = generate_causal_mask::<B>(1, seq_length, device);
 
-    //     // Forward pass through transformer
-    //     let encoded = self.transformer.forward(
+    //     // println!("mask_attn data: {:?}", mask_attn.to_data().to_vec::<bool>()); // the mask_attn is huge, has both true and false values
+
+    //     let encoded = self.transformer.forward_autoregressive_inference(
     //         TransformerEncoderInput::new(embedding_with_rope)
     //             .mask_pad(batch.prompt_mask)
     //             .mask_attn(mask_attn),
+    //         cache,
     //     );
 
     //     self.output.forward(encoded)
@@ -263,31 +262,29 @@ impl<B: Backend> TextGenerationModel<B> {
     pub fn forward_inference_sequential(
         &self,
         batch: TextGenerationBatch<B>,
-        current_tokens: &[i32],
+        current_tokens: &[u32],
         seq_length: usize,
         cache: &mut TransformerEncoderAutoregressiveCache<B>,
     ) -> Tensor<B, 3> {
         let device = &self.devices()[0];
-        // concerned that supplying only the last token will cause model to lose context
-        let tokens_tensor =
-            Tensor::<B, 1, Int>::from_ints(&current_tokens[seq_length - 1..], device)
-                .reshape([1, 1]);
-        // let tokens_tensor =
-        //     Tensor::<B, 1, Int>::from_ints(current_tokens, device).reshape([1, seq_length]);
 
+        // We only need to process the newest token for inference
+        let last_token = &current_tokens[current_tokens.len() - 1..];
+        let tokens_tensor = Tensor::<B, 1, Int>::from_ints(last_token, device).reshape([1, 1]);
+
+        // Get embeddings for just the new token
         let embedding = self.embedding_token.forward(tokens_tensor);
         let embedding = embedding.unsqueeze::<4>();
         let embedding_with_rope = self.rotary.forward(embedding);
         let embedding_with_rope = embedding_with_rope.squeeze::<3>(0);
 
-        // Create causal attention mask for the full sequence
-        let mask_attn = generate_causal_mask::<B>(1, seq_length, device);
-
-        // println!("mask_attn data: {:?}", mask_attn.to_data().to_vec::<bool>()); // the mask_attn is huge, has both true and false values
+        // For sequential inference, we only need the mask for the new position
+        // The cache handles previous positions
+        let mask_attn = generate_causal_mask::<B>(1, 1, device);
 
         let encoded = self.transformer.forward_autoregressive_inference(
             TransformerEncoderInput::new(embedding_with_rope)
-                .mask_pad(batch.prompt_mask)
+                .mask_pad(batch.prompt_mask.slice([0..1, seq_length - 1..seq_length])) // Only use mask for new position
                 .mask_attn(mask_attn),
             cache,
         );

@@ -90,6 +90,10 @@ impl NumericalTokenizer {
         tokens
     }
 
+    pub fn decode_inference(&self, tokens: &[u32]) -> String {
+        self.tokenizer.decode(&tokens, false).unwrap()
+    }
+
     pub fn pad(&self, tokens: Vec<usize>, max_length: usize) -> Vec<usize> {
         let pad_token = self.pad_token();
         let mut padded_tokens = tokens;

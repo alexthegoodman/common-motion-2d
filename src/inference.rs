@@ -15,6 +15,7 @@ use burn::{
     record::{CompactRecorder, Recorder},
     tensor::{activation::softmax, backend::Backend, Shape, Tensor, TensorData},
 };
+use itertools::Itertools;
 use std::{path::Path, sync::Arc};
 
 use crate::{data::tokenizer::NumericalTokenizer, model::TextGenerationModel};
@@ -311,141 +312,102 @@ pub fn infer_from_text<B: Backend>(
 
     // Sampling strategy
     let mut sampler = if temperature > 0.0 {
-        Sampler::TopP(TopP::new(0.9, 42))
+        Sampler::TopP(TopP::new(0.7, 42))
     } else {
         Sampler::Argmax
     };
+
+    // prefer more deterministic sampling for now
+    // let mut sampler = Sampler::Argmax;
 
     // Process each prompt
     for prompt in prompts {
         println!("Processing prompt: {}", prompt);
 
         // Create initial input by tokenizing the prompt
-        let mut current_tokens = tokenizer.encode_inference(&prompt, true);
+        let mut current_tokens: tokenizers::Encoding = tokenizer.encode_inference(&prompt, true);
+        let mut current_tokens: Vec<u32> = current_tokens.get_ids().to_vec();
+        let prompt_length = current_tokens.len();
 
-        let mut current_tokens = current_tokens.get_ids();
-
-        // create tensor from current_tokens (Vec<usize>)
-        let mut current_tokens = Tensor::<B, 1, Int>::from_ints(current_tokens, device)
-            .reshape([1, current_tokens.len()]);
-
-        // let prompt_length = current_tokens.len();
-        let prompt_length = current_tokens.dims()[1].to_usize();
-
-        let mut seq_length = prompt_length;
-
-        println!("Starting sequence length: {}", seq_length);
+        // Track position for attention
+        let mut input_pos = 0;
 
         // Generate tokens one by one
         for _ in 0..max_new_tokens {
-            // println!("Preparing batch...");
+            // Convert current sequence to tensor
+            let current_tensor: Tensor<B, 2, Int> =
+                Tensor::<B, 1, Int>::from_ints(&current_tokens[input_pos..], device)
+                    .reshape([current_tokens.len() - input_pos, 1]);
 
-            // Prepare input batch
-            let batch = prepare_inference_batch::<B>(
-                &current_tokens,
+            // Prepare batch and get model output
+            let batch: TextGenerationBatch<B> = prepare_inference_batch::<B>(
+                &current_tensor,
                 prompt_length,
-                // tokenizer.clone(),
                 max_new_tokens,
                 device,
             );
 
-            // println!("Running inference...");
+            let encoded: Tensor<B, 3> = model.forward_inference_sequential(
+                batch,
+                &current_tokens[input_pos..],
+                current_tokens.len() - input_pos,
+                &mut cache,
+            );
 
-            // Convert usize slice to Ints
-            // let int_tokens: Vec<i32> = current_tokens.iter().map(|&t| t as i32).collect();
-            let int_tokens = current_tokens
-                .clone()
-                .to_data()
-                .to_vec()
-                .expect("Could not get vec");
-
-            // Get model output for the current sequence
-            let encoded =
-                model.forward_inference_sequential(batch, &int_tokens, seq_length, &mut cache);
-
-            println!("Encoded shape: {:?}", encoded.dims());
-            println!("Existing sequence length: {}", seq_length);
-
-            // Get predictions for the last token
-            // println!("Slicing at position: {}", seq_length);
-
-            // let last_token_logits = encoded.slice([
-            //     0..1,
-            //     seq_length - 1..seq_length, // This ensures we're getting a slice of size 1
-            //     0..tokenizer.vocab_size(),
-            // ]);
-
-            // let dim_1 = encoded.dims()[1];
-
-            // let last_token_logits = if dim_1 == 1 {
-            //     encoded
-            // } else {
-            //     encoded.slice([
-            //         0..1,
-            //         dim_1 - 1..dim_1, // This ensures we're getting a slice of size 1
-            //         0..tokenizer.vocab_size(),
-            //     ])
-            // };
-
-            let logits = encoded;
-
-            let [batch_size, seq_len, _vocab_size] = logits.dims();
-            let mut next_token_logits: Tensor<B, 2> = logits
+            // Get logits for the next token only
+            let [batch_size, seq_len, vocab_size] = encoded.dims();
+            let next_token_logits: Tensor<B, 2> = encoded
                 .slice([0..batch_size, seq_len - 1..seq_len])
-                .squeeze(1); // [batch_size=1, vocab_size]
+                .squeeze(1);
 
-            println!("Apply temperature...");
-
-            // Apply temperature
+            // Apply temperature and sample
             let next_token_logits = if temperature != 1.0 {
-                next_token_logits / temperature
+                softmax(next_token_logits / temperature, 1)
             } else {
-                next_token_logits
+                softmax(next_token_logits, 1)
             };
 
-            // Convert to probabilities
-            let next_token_logits = softmax(next_token_logits, 1);
-
-            // let squeeze_probs: Tensor<B, 2> = probs.squeeze(0);
-
-            // println!("Sampling from probabilities...");
-
-            // Sample from the distribution
-            // let next_token = sample_from_probs::<B>(probs.squeeze(0));
-            let next_token = sampler.sample(next_token_logits).squeeze(0);
-
-            // Append the new token
-            // current_tokens.push(next_token);
-            current_tokens = Tensor::cat(vec![current_tokens, next_token], 0);
-
-            // println!("Incrementing sequence length...");
-
-            seq_length += 1;
-
-            // Check for completion (e.g., if we generated an end token)
-            // if next_token == tokenizer.end_token() {
-            //     break;
-            // }
-
-            // Print current tokens every 10 tokens
-            if seq_length % 10 == 0 {
-                let int_tokens: Vec<i32> = current_tokens
-                    .clone()
+            println!(
+                "Top 5 logits (after softmax): {:?}",
+                next_token_logits
                     .to_data()
-                    .to_vec()
-                    .expect("Could not get vec");
+                    .to_vec::<f32>()
+                    .expect("Could not get vec")
+                    .iter()
+                    .enumerate()
+                    .sorted_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap())
+                    .take(5)
+                    .collect::<Vec<_>>()
+            );
 
-                // to usize
-                let usize_tokens: Vec<usize> = int_tokens.iter().map(|&t| t as usize).collect();
+            let next_token: Tensor<B, 2, Int> = sampler.sample(next_token_logits);
 
-                let generated_text = tokenizer.decode(&usize_tokens[prompt_length..]);
+            // Extract the token and append to sequence
+            let next_token_value: i32 =
+                next_token.to_data().to_vec().expect("Could not get vec")[0];
+
+            println!("Selected token: {}", next_token_value);
+
+            current_tokens.push(next_token_value as u32);
+
+            // Update input position for next iteration
+            input_pos = current_tokens.len() - 1;
+
+            // Print progress
+            if (current_tokens.len() - prompt_length) % 10 == 0 {
+                let generated_text = tokenizer.decode_inference(&current_tokens[prompt_length..]);
                 println!("Generated so far: {}", generated_text);
             }
+
+            // Optional: Check for end token
+            // if next_token_value as u32 == tokenizer.end_token() {
+            //     break;
+            // }
         }
 
-        // Decode the generated sequence
+        // Final output
         // let generated_text = tokenizer.decode(&current_tokens[prompt_length..]);
-        // println!("Generated completion: {}", generated_text);
+        // println!("Final completion: {}", generated_text);
     }
 }
 

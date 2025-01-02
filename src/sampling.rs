@@ -14,7 +14,10 @@ impl Sampler {
     pub fn sample<B: Backend>(&mut self, logits: Tensor<B, 2>) -> Tensor<B, 2, Int> {
         match self {
             Self::TopP(s) => s.sample(logits),
-            Self::Argmax => logits.argmax(1),
+            Self::Argmax => {
+                println!("Argmax sampling...");
+                logits.argmax(1)
+            }
         }
     }
 }
@@ -64,6 +67,8 @@ impl Sampling for TopP {
         let next_token_idx = WeightedIndex::new(probs_sort)
             .unwrap()
             .sample(&mut self.rng);
+
+        println!("Slicing in probs...");
 
         probs_idx.slice([0..1, next_token_idx..next_token_idx + 1])
     }
