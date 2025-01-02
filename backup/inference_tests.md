@@ -72,3 +72,8 @@ Generated so far: ,[END],[END], 0,[END], 115,[END], 564, 137,[END],[END], 5,[END
 
 ### 3. no special token on prompt
 Generated so far:  782, 439, 0, 0,[END],[END],[END], 466, 312,[END],[END], 5, 765,[END], 410,[END], 2.5,[END],[END],[END]
+
+## text-generation-e3-rope (token-by-token prediction)
+
+### 1.
+Generated so far: , 440,[END], 0, 116, 515, 364, 272, 153, 325, 4, 5, 119, 320, 534, 121, 2.5, 325, 302, 412

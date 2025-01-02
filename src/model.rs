@@ -146,7 +146,14 @@ impl<B: Backend> TextGenerationModel<B> {
         // Token embeddings only - we don't need separate positional embeddings anymore
         let embedding = self.embedding_token.forward(inputs);
 
+        // println!("Embedding shape: {:?}", embedding.dims());
+        // println!("Embedding dims {}", embedding.dims()[2]); // 768
+
+        let embedding = embedding.unsqueeze::<4>();
+
         let embedding_with_rope = self.rotary.forward(embedding);
+
+        let embedding_with_rope = embedding_with_rope.squeeze::<3>(0);
 
         // Create causal attention mask
         let mask_attn = generate_prompt_completion_mask::<B>(
@@ -301,7 +308,9 @@ impl<B: Backend> TextGenerationModel<B> {
         let embedding = self.embedding_token.forward(tokens_tensor);
 
         // Apply rotary encoding
+        let embedding = embedding.unsqueeze::<4>();
         let embedding_with_rope = self.rotary.forward(embedding);
+        let embedding_with_rope = embedding_with_rope.squeeze::<3>(0);
 
         // Create causal attention mask for the full sequence
         let mask_attn = generate_causal_mask::<B>(1, seq_length, device);

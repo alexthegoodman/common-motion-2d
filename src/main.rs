@@ -32,13 +32,13 @@ fn main() {
 
     // let device = burn::tensor::Device::<Backend>::DiscreteGpu(0);
 
-    // // infer_from_text::<Backend>(
-    // //     "/tmp/text-generation-e3-prompt-large",
-    // //     &device,
-    // //     prompts,
-    // //     512,
-    // //     1.0, // 1.0 should have no effect
-    // // );
+    // infer_from_text::<Backend>(
+    //     "/tmp/text-generation-e3-rope",
+    //     &device,
+    //     prompts,
+    //     512,
+    //     1.0, // 1.0 should have no effect
+    // );
 
-    // infer_from_text_trainlike::<Backend>("/tmp/text-generation-e3-prompt-large", &device, prompts);
+    // // infer_from_text_trainlike::<Backend>("/tmp/text-generation-e3-prompt-large", &device, prompts);
 }
