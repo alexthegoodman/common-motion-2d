@@ -268,17 +268,24 @@ impl<B: Backend> TextGenerationModel<B> {
         cache: &mut TransformerEncoderAutoregressiveCache<B>,
     ) -> Tensor<B, 3> {
         let device = &self.devices()[0];
+        // let tokens_tensor =
+        //     Tensor::<B, 1, Int>::from_ints(&current_tokens[seq_length - 1..], device)
+        //         .reshape([1, 1]);
         let tokens_tensor =
-            Tensor::<B, 1, Int>::from_ints(&current_tokens[seq_length - 1..], device)
-                .reshape([1, 1]);
+            Tensor::<B, 1, Int>::from_ints(current_tokens, device).reshape([1, seq_length]);
 
         let embedding = self.embedding_token.forward(tokens_tensor);
         let embedding = embedding.unsqueeze::<4>();
         let embedding_with_rope = self.rotary.forward(embedding);
         let embedding_with_rope = embedding_with_rope.squeeze::<3>(0);
 
+        // Create causal attention mask for the full sequence
+        let mask_attn = generate_causal_mask::<B>(1, seq_length, device);
+
         let encoded = self.transformer.forward_autoregressive_inference(
-            TransformerEncoderInput::new(embedding_with_rope),
+            TransformerEncoderInput::new(embedding_with_rope)
+                .mask_pad(batch.prompt_mask)
+                .mask_attn(mask_attn),
             cache,
         );
 
