@@ -7,7 +7,7 @@ use crate::{
     model::TextGenerationModelConfig,
     training::ExperimentConfig,
 };
-use burn::{config::Config, tensor::Int};
+use burn::{config::Config, nn::RotaryEncodingConfig, tensor::Int};
 use burn::{data::dataloader::batcher::Batcher, tensor::cast::ToElement};
 use burn::{
     module::Module,
@@ -41,8 +41,15 @@ pub fn infer_from_text_trainlike<B: Backend>(
     // Debug: Print tokenizer vocabulary size
     println!("Tokenizer vocab size: {}", tokenizer.vocab_size());
 
+    let rope = RotaryEncodingConfig::new(
+        128 + 512, // max_sequence_length (prompt + completion)
+        config.transformer.d_model,
+    )
+    .with_theta(10000.0);
+
     let model = TextGenerationModelConfig::new(
         config.transformer.clone(),
+        rope,
         tokenizer.vocab_size(),
         tokenizer.pad_token(),
         128,
@@ -165,94 +172,94 @@ pub fn infer_from_text_trainlike<B: Backend>(
 }
 
 // batch inference
-pub fn infer_from_text_batch<B: Backend>(
-    artifact_dir: &str,
-    device: &B::Device,
-    texts: Vec<String>,
-) {
-    // Load experiment configuration
-    let config = ExperimentConfig::load(format!("{artifact_dir}/config.json").as_str())
-        .expect("Config file present");
+// pub fn infer_from_text_batch<B: Backend>(
+//     artifact_dir: &str,
+//     device: &B::Device,
+//     texts: Vec<String>,
+// ) {
+//     // Load experiment configuration
+//     let config = ExperimentConfig::load(format!("{artifact_dir}/config.json").as_str())
+//         .expect("Config file present");
 
-    // Load the model
-    let record = CompactRecorder::new()
-        .load(format!("{artifact_dir}/model").into(), device)
-        .expect("Trained model should exist");
+//     // Load the model
+//     let record = CompactRecorder::new()
+//         .load(format!("{artifact_dir}/model").into(), device)
+//         .expect("Trained model should exist");
 
-    println!("Model loaded...");
+//     println!("Model loaded...");
 
-    let tokenizer = Arc::new(NumericalTokenizer::default());
-    let batcher = TextGenerationBatcher::new(tokenizer.clone(), 128, 512);
+//     let tokenizer = Arc::new(NumericalTokenizer::default());
+//     let batcher = TextGenerationBatcher::new(tokenizer.clone(), 128, 512);
 
-    // Debug: Print tokenizer vocabulary size
-    println!("Tokenizer vocab size: {}", tokenizer.vocab_size());
+//     // Debug: Print tokenizer vocabulary size
+//     println!("Tokenizer vocab size: {}", tokenizer.vocab_size());
 
-    let model = TextGenerationModelConfig::new(
-        config.transformer.clone(),
-        tokenizer.vocab_size(),
-        tokenizer.pad_token(),
-        128,
-        512,
-    )
-    .init::<B>(&device);
+//     let model = TextGenerationModelConfig::new(
+//         config.transformer.clone(),
+//         tokenizer.vocab_size(),
+//         tokenizer.pad_token(),
+//         128,
+//         512,
+//     )
+//     .init::<B>(&device);
 
-    let model: TextGenerationModel<B> = model.load_record(record);
+//     let model: TextGenerationModel<B> = model.load_record(record);
 
-    // Create a batch from the input text
-    let mut items = Vec::new();
+//     // Create a batch from the input text
+//     let mut items = Vec::new();
 
-    for text in texts.clone() {
-        let item = TextGenerationItem::new(text, String::new());
-        println!("input item: {:?}", item);
-        items.push(item);
-    }
+//     for text in texts.clone() {
+//         let item = TextGenerationItem::new(text, String::new());
+//         println!("input item: {:?}", item);
+//         items.push(item);
+//     }
 
-    let input = batcher.batch(items);
+//     let input = batcher.batch(items);
 
-    // 2. forward_inference approach, same results
-    // Run inference
-    let output = model.forward_inference(input);
+//     // 2. forward_inference approach, same results
+//     // Run inference
+//     let output = model.forward_inference(input);
 
-    // Get logits from the output - now properly shaped as [batch_size, seq_length, vocab_size]
-    let logits = output;
+//     // Get logits from the output - now properly shaped as [batch_size, seq_length, vocab_size]
+//     let logits = output;
 
-    // Apply softmax to get probabilities (along vocab_size dimension)
-    let probs = softmax(logits, 2);
+//     // Apply softmax to get probabilities (along vocab_size dimension)
+//     let probs = softmax(logits, 2);
 
-    // Get the predicted token indices
-    let predicted_tokens = probs.argmax(2);
+//     // Get the predicted token indices
+//     let predicted_tokens = probs.argmax(2);
 
-    // Process each sequence in the batch
-    for batch_idx in 0..texts.len() {
-        let sequence = predicted_tokens
-            .clone()
-            .slice([batch_idx..batch_idx + 1, 0..predicted_tokens.dims()[1]]);
-        // let sequence = predicted_tokens.slice([batch_idx, ..]);
-        let sequence = sequence.clone().reshape([sequence.dims()[1]]);
+//     // Process each sequence in the batch
+//     for batch_idx in 0..texts.len() {
+//         let sequence = predicted_tokens
+//             .clone()
+//             .slice([batch_idx..batch_idx + 1, 0..predicted_tokens.dims()[1]]);
+//         // let sequence = predicted_tokens.slice([batch_idx, ..]);
+//         let sequence = sequence.clone().reshape([sequence.dims()[1]]);
 
-        let sequence_data = sequence.to_data();
+//         let sequence_data = sequence.to_data();
 
-        // Convert bytes to Vec<usize>
-        let predicted_token_ids: Vec<usize> = sequence_data
-            .bytes
-            .chunks(std::mem::size_of::<B::IntElem>())
-            .map(|chunk| {
-                let mut bytes = [0u8; 8];
-                bytes[..chunk.len()].copy_from_slice(chunk);
-                usize::from_ne_bytes(bytes)
-            })
-            .collect();
+//         // Convert bytes to Vec<usize>
+//         let predicted_token_ids: Vec<usize> = sequence_data
+//             .bytes
+//             .chunks(std::mem::size_of::<B::IntElem>())
+//             .map(|chunk| {
+//                 let mut bytes = [0u8; 8];
+//                 bytes[..chunk.len()].copy_from_slice(chunk);
+//                 usize::from_ne_bytes(bytes)
+//             })
+//             .collect();
 
-        // println!(
-        //     "Predicted token ids for input {}: {:?}",
-        //     batch_idx, predicted_token_ids
-        // );
+//         // println!(
+//         //     "Predicted token ids for input {}: {:?}",
+//         //     batch_idx, predicted_token_ids
+//         // );
 
-        // Decode the tokens back to text
-        let predicted_text = tokenizer.decode(&predicted_token_ids);
-        println!("Generated text for input: {}", predicted_text);
-    }
-}
+//         // Decode the tokens back to text
+//         let predicted_text = tokenizer.decode(&predicted_token_ids);
+//         println!("Generated text for input: {}", predicted_text);
+//     }
+// }
 
 // // sequential inference
 pub fn infer_from_text<B: Backend>(
@@ -280,8 +287,15 @@ pub fn infer_from_text<B: Backend>(
     let (max_prompt_len, max_completion_len) = (128, 512); // adjust these values
     let batcher = TextGenerationBatcher::new(tokenizer.clone(), max_prompt_len, max_completion_len);
 
+    let rope = RotaryEncodingConfig::new(
+        128 + 512, // max_sequence_length (prompt + completion)
+        config.transformer.d_model,
+    )
+    .with_theta(10000.0);
+
     let model = TextGenerationModelConfig::new(
         config.transformer.clone(),
+        rope,
         tokenizer.vocab_size(),
         tokenizer.pad_token(),
         max_prompt_len,

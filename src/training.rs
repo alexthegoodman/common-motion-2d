@@ -20,6 +20,7 @@ use burn::{
         LearnerBuilder,
     },
 };
+use nn::RotaryEncodingConfig;
 use std::sync::Arc;
 
 #[derive(Config)]
@@ -48,8 +49,15 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
     let batcher_train = TextGenerationBatcher::new(tokenizer.clone(), 128, 512);
     let batcher_test = TextGenerationBatcher::new(tokenizer.clone(), 128, 512);
 
+    let rope = RotaryEncodingConfig::new(
+        128 + 512, // max_sequence_length (prompt + completion)
+        config.transformer.d_model,
+    )
+    .with_theta(10000.0);
+
     let model = TextGenerationModelConfig::new(
         config.transformer.clone(),
+        rope,
         tokenizer.vocab_size(),
         tokenizer.pad_token(),
         // config.max_seq_length,
