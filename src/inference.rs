@@ -5,6 +5,7 @@ use crate::{
         tokenizer::Tokenizer,
     },
     model::TextGenerationModelConfig,
+    sampling::{Sampler, TopP},
     training::ExperimentConfig,
 };
 use burn::{config::Config, nn::RotaryEncodingConfig, tensor::Int};
@@ -308,13 +309,28 @@ pub fn infer_from_text<B: Backend>(
     let transformer = config.transformer.init(device);
     let mut cache = transformer.new_autoregressive_cache();
 
+    // Sampling strategy
+    let mut sampler = if temperature > 0.0 {
+        Sampler::TopP(TopP::new(0.9, 42))
+    } else {
+        Sampler::Argmax
+    };
+
     // Process each prompt
     for prompt in prompts {
         println!("Processing prompt: {}", prompt);
 
         // Create initial input by tokenizing the prompt
-        let mut current_tokens = tokenizer.encode(&prompt, true);
-        let prompt_length = current_tokens.len();
+        let mut current_tokens = tokenizer.encode_inference(&prompt, true);
+
+        let mut current_tokens = current_tokens.get_ids();
+
+        // create tensor from current_tokens (Vec<usize>)
+        let mut current_tokens = Tensor::<B, 1, Int>::from_ints(current_tokens, device)
+            .reshape([1, current_tokens.len()]);
+
+        // let prompt_length = current_tokens.len();
+        let prompt_length = current_tokens.dims()[1].to_usize();
 
         let mut seq_length = prompt_length;
 
@@ -336,7 +352,12 @@ pub fn infer_from_text<B: Backend>(
             // println!("Running inference...");
 
             // Convert usize slice to Ints
-            let int_tokens: Vec<i32> = current_tokens.iter().map(|&t| t as i32).collect();
+            // let int_tokens: Vec<i32> = current_tokens.iter().map(|&t| t as i32).collect();
+            let int_tokens = current_tokens
+                .clone()
+                .to_data()
+                .to_vec()
+                .expect("Could not get vec");
 
             // Get model output for the current sequence
             let encoded =
@@ -354,39 +375,48 @@ pub fn infer_from_text<B: Backend>(
             //     0..tokenizer.vocab_size(),
             // ]);
 
-            let dim_1 = encoded.dims()[1];
+            // let dim_1 = encoded.dims()[1];
 
-            let last_token_logits = if dim_1 == 1 {
-                encoded
-            } else {
-                encoded.slice([
-                    0..1,
-                    dim_1 - 1..dim_1, // This ensures we're getting a slice of size 1
-                    0..tokenizer.vocab_size(),
-                ])
-            };
+            // let last_token_logits = if dim_1 == 1 {
+            //     encoded
+            // } else {
+            //     encoded.slice([
+            //         0..1,
+            //         dim_1 - 1..dim_1, // This ensures we're getting a slice of size 1
+            //         0..tokenizer.vocab_size(),
+            //     ])
+            // };
+
+            let logits = encoded;
+
+            let [batch_size, seq_len, _vocab_size] = logits.dims();
+            let mut next_token_logits: Tensor<B, 2> = logits
+                .slice([0..batch_size, seq_len - 1..seq_len])
+                .squeeze(1); // [batch_size=1, vocab_size]
 
             println!("Apply temperature...");
 
             // Apply temperature
-            let scaled_logits = if temperature != 1.0 {
-                last_token_logits / temperature
+            let next_token_logits = if temperature != 1.0 {
+                next_token_logits / temperature
             } else {
-                last_token_logits
+                next_token_logits
             };
 
             // Convert to probabilities
-            let probs = softmax(scaled_logits, 2);
+            let next_token_logits = softmax(next_token_logits, 1);
 
-            let squeeze_probs: Tensor<B, 2> = probs.squeeze(0);
+            // let squeeze_probs: Tensor<B, 2> = probs.squeeze(0);
 
             // println!("Sampling from probabilities...");
 
             // Sample from the distribution
-            let next_token = sample_from_probs::<B>(squeeze_probs.squeeze(0));
+            // let next_token = sample_from_probs::<B>(probs.squeeze(0));
+            let next_token = sampler.sample(next_token_logits).squeeze(0);
 
             // Append the new token
-            current_tokens.push(next_token);
+            // current_tokens.push(next_token);
+            current_tokens = Tensor::cat(vec![current_tokens, next_token], 0);
 
             // println!("Incrementing sequence length...");
 
@@ -398,28 +428,39 @@ pub fn infer_from_text<B: Backend>(
             // }
 
             // Print current tokens every 10 tokens
-            if current_tokens.len() % 10 == 0 {
-                let generated_text = tokenizer.decode(&current_tokens[prompt_length..]);
+            if seq_length % 10 == 0 {
+                let int_tokens: Vec<i32> = current_tokens
+                    .clone()
+                    .to_data()
+                    .to_vec()
+                    .expect("Could not get vec");
+
+                // to usize
+                let usize_tokens: Vec<usize> = int_tokens.iter().map(|&t| t as usize).collect();
+
+                let generated_text = tokenizer.decode(&usize_tokens[prompt_length..]);
                 println!("Generated so far: {}", generated_text);
             }
         }
 
         // Decode the generated sequence
-        let generated_text = tokenizer.decode(&current_tokens[prompt_length..]);
-        println!("Generated completion: {}", generated_text);
+        // let generated_text = tokenizer.decode(&current_tokens[prompt_length..]);
+        // println!("Generated completion: {}", generated_text);
     }
 }
 
 // Helper function to prepare a single inference batch
 fn prepare_inference_batch<B: Backend>(
-    tokens: &[usize],
+    // tokens: &[usize],
+    tokens: &Tensor<B, 2, Int>,
     prompt_length: usize,
     max_new_tokens: usize,
     device: &B::Device,
 ) -> TextGenerationBatch<B> {
     // Create prompt tensors
-    let prompt_tokens = Tensor::<B, 1, Int>::from_ints(&tokens[..prompt_length], device)
-        .reshape([1, prompt_length]);
+    // let prompt_tokens = Tensor::<B, 1, Int>::from_ints(&tokens[..prompt_length], device)
+    //     .reshape([1, prompt_length]);
+    let prompt_tokens = tokens.clone().slice([0..1, 0..prompt_length]);
     let prompt_mask = Tensor::<B, 2, Int>::ones([1, prompt_length], device).bool();
 
     // Create empty completion tensors

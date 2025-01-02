@@ -1,3 +1,8 @@
+use std::borrow::Borrow;
+use std::ops::Deref;
+
+use tokenizers::Encoding;
+
 #[allow(dead_code)]
 pub trait Tokenizer: Send + Sync {
     fn encode(&self, value: &str, special_tokens: bool) -> Vec<usize>;
@@ -76,6 +81,15 @@ impl Tokenizer for NumericalTokenizer {
 }
 
 impl NumericalTokenizer {
+    pub fn encode_inference(&self, value: &str, special_tokens: bool) -> Encoding {
+        let text = match special_tokens {
+            true => "[START]".to_owned() + value + "[END]",
+            false => value.to_string(),
+        };
+        let tokens = self.tokenizer.encode(text, true).unwrap();
+        tokens
+    }
+
     pub fn pad(&self, tokens: Vec<usize>, max_length: usize) -> Vec<usize> {
         let pad_token = self.pad_token();
         let mut padded_tokens = tokens;
