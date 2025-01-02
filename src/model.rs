@@ -10,7 +10,9 @@ use burn::{
     tensor::{backend::AutodiffBackend, RangesArg},
     train::{ClassificationOutput, TrainOutput, TrainStep, ValidStep},
 };
-use nn::{RotaryEncoding, RotaryEncodingConfig};
+use nn::{
+    transformer::TransformerEncoderAutoregressiveCache, RotaryEncoding, RotaryEncodingConfig,
+};
 
 #[derive(Config)]
 pub struct TextGenerationModelConfig {
@@ -228,39 +230,6 @@ impl<B: Backend> TextGenerationModel<B> {
     // pub fn forward_inference_sequential(
     //     &self,
     //     batch: TextGenerationBatch<B>,
-    //     current_tokens: &[i32], // Changed to take current tokens directly
-    //     seq_length: usize,
-    // ) -> Tensor<B, 3> {
-    //     let [batch_size, _] = batch.prompt_tokens.dims();
-    //     let device = &self.devices()[0];
-
-    //     // Create tensor from current_tokens slice
-    //     let tokens_tensor =
-    //         Tensor::<B, 1, Int>::from_ints(current_tokens, device).reshape([1, seq_length]); // Reshape to [batch_size=1, seq_length]
-
-    //     let index_positions = Tensor::arange(0..seq_length as i64, device)
-    //         .reshape([1, seq_length])
-    //         .repeat_dim(0, batch_size);
-
-    //     let embedding_positions = self.embedding_pos.forward(index_positions);
-    //     let embedding_tokens = self.embedding_token.forward(tokens_tensor);
-    //     let embedding = (embedding_positions + embedding_tokens) / 2;
-
-    //     // Create causal attention mask
-    //     let mask_attn = generate_causal_mask::<B>(batch_size, seq_length, device);
-
-    //     let encoded = self.transformer.forward(
-    //         TransformerEncoderInput::new(embedding)
-    //             .mask_pad(batch.prompt_mask)
-    //             .mask_attn(mask_attn),
-    //     );
-
-    //     self.output.forward(encoded)
-    // }
-
-    // pub fn forward_inference_sequential(
-    //     &self,
-    //     batch: TextGenerationBatch<B>,
     //     current_tokens: &[i32],
     //     seq_length: usize,
     // ) -> Tensor<B, 3> {
@@ -270,21 +239,20 @@ impl<B: Backend> TextGenerationModel<B> {
     //     let tokens_tensor =
     //         Tensor::<B, 1, Int>::from_ints(current_tokens, device).reshape([1, seq_length]);
 
-    //     // Create positional indices tensor - only use the last position for efficiency
-    //     let last_pos = (seq_length - 1) as i64;
-    //     let index_positions = Tensor::arange(0..seq_length as i64, device).reshape([1, seq_length]);
+    //     // Get token embeddings
+    //     let embedding = self.embedding_token.forward(tokens_tensor);
 
-    //     // Get embeddings
-    //     let embedding_positions = self.embedding_pos.forward(index_positions);
-    //     let embedding_tokens = self.embedding_token.forward(tokens_tensor);
-    //     let embedding = (embedding_positions + embedding_tokens) / 2.0;
+    //     // Apply rotary encoding
+    //     let embedding = embedding.unsqueeze::<4>();
+    //     let embedding_with_rope = self.rotary.forward(embedding);
+    //     let embedding_with_rope = embedding_with_rope.squeeze::<3>(0);
 
     //     // Create causal attention mask for the full sequence
     //     let mask_attn = generate_causal_mask::<B>(1, seq_length, device);
 
     //     // Forward pass through transformer
     //     let encoded = self.transformer.forward(
-    //         TransformerEncoderInput::new(embedding)
+    //         TransformerEncoderInput::new(embedding_with_rope)
     //             .mask_pad(batch.prompt_mask)
     //             .mask_attn(mask_attn),
     //     );
@@ -297,29 +265,21 @@ impl<B: Backend> TextGenerationModel<B> {
         batch: TextGenerationBatch<B>,
         current_tokens: &[i32],
         seq_length: usize,
+        cache: &mut TransformerEncoderAutoregressiveCache<B>,
     ) -> Tensor<B, 3> {
         let device = &self.devices()[0];
-
-        // Create tensor from current_tokens slice and reshape to [batch_size=1, seq_length]
         let tokens_tensor =
-            Tensor::<B, 1, Int>::from_ints(current_tokens, device).reshape([1, seq_length]);
+            Tensor::<B, 1, Int>::from_ints(&current_tokens[seq_length - 1..], device)
+                .reshape([1, 1]);
 
-        // Get token embeddings
         let embedding = self.embedding_token.forward(tokens_tensor);
-
-        // Apply rotary encoding
         let embedding = embedding.unsqueeze::<4>();
         let embedding_with_rope = self.rotary.forward(embedding);
         let embedding_with_rope = embedding_with_rope.squeeze::<3>(0);
 
-        // Create causal attention mask for the full sequence
-        let mask_attn = generate_causal_mask::<B>(1, seq_length, device);
-
-        // Forward pass through transformer
-        let encoded = self.transformer.forward(
-            TransformerEncoderInput::new(embedding_with_rope)
-                .mask_pad(batch.prompt_mask)
-                .mask_attn(mask_attn),
+        let encoded = self.transformer.forward_autoregressive_inference(
+            TransformerEncoderInput::new(embedding_with_rope),
+            cache,
         );
 
         self.output.forward(encoded)

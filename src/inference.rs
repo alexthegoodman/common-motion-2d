@@ -305,6 +305,9 @@ pub fn infer_from_text<B: Backend>(
 
     let model: TextGenerationModel<B> = model.load_record(record);
 
+    let transformer = config.transformer.init(device);
+    let mut cache = transformer.new_autoregressive_cache();
+
     // Process each prompt
     for prompt in prompts {
         println!("Processing prompt: {}", prompt);
@@ -314,6 +317,8 @@ pub fn infer_from_text<B: Backend>(
         let prompt_length = current_tokens.len();
 
         let mut seq_length = prompt_length;
+
+        println!("Starting sequence length: {}", seq_length);
 
         // Generate tokens one by one
         for _ in 0..max_new_tokens {
@@ -334,20 +339,34 @@ pub fn infer_from_text<B: Backend>(
             let int_tokens: Vec<i32> = current_tokens.iter().map(|&t| t as i32).collect();
 
             // Get model output for the current sequence
-            let encoded = model.forward_inference_sequential(batch, &int_tokens, seq_length);
+            let encoded =
+                model.forward_inference_sequential(batch, &int_tokens, seq_length, &mut cache);
 
             println!("Encoded shape: {:?}", encoded.dims());
+            println!("Existing sequence length: {}", seq_length);
 
             // Get predictions for the last token
             // println!("Slicing at position: {}", seq_length);
 
-            let last_token_logits = encoded.slice([
-                0..1,
-                seq_length - 1..seq_length, // This ensures we're getting a slice of size 1
-                0..tokenizer.vocab_size(),
-            ]);
+            // let last_token_logits = encoded.slice([
+            //     0..1,
+            //     seq_length - 1..seq_length, // This ensures we're getting a slice of size 1
+            //     0..tokenizer.vocab_size(),
+            // ]);
 
-            // println!("Apply temperature...");
+            let dim_1 = encoded.dims()[1];
+
+            let last_token_logits = if dim_1 == 1 {
+                encoded
+            } else {
+                encoded.slice([
+                    0..1,
+                    dim_1 - 1..dim_1, // This ensures we're getting a slice of size 1
+                    0..tokenizer.vocab_size(),
+                ])
+            };
+
+            println!("Apply temperature...");
 
             // Apply temperature
             let scaled_logits = if temperature != 1.0 {

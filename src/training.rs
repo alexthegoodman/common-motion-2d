@@ -30,7 +30,7 @@ pub struct ExperimentConfig {
     #[config(default = 512)]
     // #[config(default = 1024)]
     pub max_seq_length: usize,
-    #[config(default = 1)]
+    #[config(default = 2)]
     pub batch_size: usize,
     #[config(default = 50)]
     pub num_epochs: usize,
@@ -93,11 +93,11 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
     // let lr_scheduler = ConstantLr::new(0.00000001); // no learning noted
     // let lr_scheduler = ConstantLr::new(0.01); // spike followed by decrease
     // let lr_scheduler = ConstantLr::new(0.00001); // fast learning, quick to stabilize loss at around 1.57
-    // let lr_scheduler = ConstantLr::new(0.00005); // better for batch size of 2, similar to 0.00001 at batch size of 1
-    let lr_scheduler = ConstantLr::new(0.00007);
-    // let lr_scheduler = ConstantLr::new(0.0001); // slightly, odd
-    // let lr_scheduler = ConstantLr::new(0.000001); // slightly slower, but quick to stabilize loss at around 1.73
-    // let lr_scheduler = ConstantLr::new(0.0000001); // no learning
+    let lr_scheduler = ConstantLr::new(0.00005); // better for batch size of 2, similar to 0.00001 at batch size of 1
+                                                 // let lr_scheduler = ConstantLr::new(0.00007);
+                                                 // let lr_scheduler = ConstantLr::new(0.0001); // slightly, odd
+                                                 // let lr_scheduler = ConstantLr::new(0.000001); // slightly slower, but quick to stabilize loss at around 1.73
+                                                 // let lr_scheduler = ConstantLr::new(0.0000001); // no learning
 
     let learner = LearnerBuilder::new(artifact_dir)
         .metric_train(CudaMetric::new())
