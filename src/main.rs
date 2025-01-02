@@ -28,19 +28,19 @@ fn main() {
 
     let mut prompts = Vec::new();
     prompts.push(
-        "0, 5, 300, 100, 305, 217, \n1, 5, 200, 300, 50, 70, \n2, 5, 100, 100, 304, 116, "
+        "0, 5, 361, 161, 305, 217, \n1, 5, 232, 332, 50, 70, \n2, 5, 149, 149, 304, 116, "
             .to_string(),
     );
 
     let device = burn::tensor::Device::<Backend>::DiscreteGpu(0);
 
-    infer_from_text::<Backend>(
-        "/tmp/text-generation-e3-prompt-large",
-        &device,
-        prompts,
-        512,
-        1.0, // 1.0 should have no effect
-    );
+    // infer_from_text::<Backend>(
+    //     "/tmp/text-generation-e3-prompt-large",
+    //     &device,
+    //     prompts,
+    //     512,
+    //     1.0, // 1.0 should have no effect
+    // );
 
-    // infer_from_text_trainlike::<Backend>("/tmp/text-generation-e3-prompt-large", &device, prompts);
+    infer_from_text_trainlike::<Backend>("/tmp/text-generation-e3-prompt-large", &device, prompts);
 }
