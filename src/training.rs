@@ -20,6 +20,7 @@ use burn::{
         LearnerBuilder,
     },
 };
+use nn::RotaryEncodingConfig;
 use std::sync::Arc;
 
 #[derive(Config)]
@@ -29,9 +30,9 @@ pub struct ExperimentConfig {
     #[config(default = 512)]
     // #[config(default = 1024)]
     pub max_seq_length: usize,
-    #[config(default = 1)]
+    #[config(default = 2)]
     pub batch_size: usize,
-    #[config(default = 3)]
+    #[config(default = 50)]
     pub num_epochs: usize,
 }
 
@@ -48,8 +49,15 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
     let batcher_train = TextGenerationBatcher::new(tokenizer.clone(), 128, 512);
     let batcher_test = TextGenerationBatcher::new(tokenizer.clone(), 128, 512);
 
+    let rope = RotaryEncodingConfig::new(
+        128 + 512, // max_sequence_length (prompt + completion)
+        config.transformer.d_model,
+    )
+    .with_theta(10000.0);
+
     let model = TextGenerationModelConfig::new(
         config.transformer.clone(),
+        rope,
         tokenizer.vocab_size(),
         tokenizer.pad_token(),
         // config.max_seq_length,
@@ -74,7 +82,8 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
         // .build(SamplerDataset::new(dataset_test, 1050));
         .build(SamplerDataset::new(dataset_test, 45));
 
-    let accum = 1; // Effective batch size = 6 * 6 = 32. 32 is the "best maximum"
+    // let accum = 1; // Effective batch size = 6 * 6 = 32. 32 is the "best maximum"
+    let accum = config.batch_size;
     let optim = config.optimizer.init();
     // let lr_scheduler = NoamLrSchedulerConfig::new(0.01 / accum as f64)
     //     .with_warmup_steps(6000)
@@ -85,6 +94,7 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
     // let lr_scheduler = ConstantLr::new(0.01); // spike followed by decrease
     // let lr_scheduler = ConstantLr::new(0.00001); // fast learning, quick to stabilize loss at around 1.57
     let lr_scheduler = ConstantLr::new(0.00005); // better for batch size of 2, similar to 0.00001 at batch size of 1
+                                                 // let lr_scheduler = ConstantLr::new(0.00007);
                                                  // let lr_scheduler = ConstantLr::new(0.0001); // slightly, odd
                                                  // let lr_scheduler = ConstantLr::new(0.000001); // slightly slower, but quick to stabilize loss at around 1.73
                                                  // let lr_scheduler = ConstantLr::new(0.0000001); // no learning

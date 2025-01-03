@@ -72,3 +72,67 @@ Generated so far: ,[END],[END], 0,[END], 115,[END], 564, 137,[END],[END], 5,[END
 
 ### 3. no special token on prompt
 Generated so far:  782, 439, 0, 0,[END],[END],[END], 466, 312,[END],[END], 5, 765,[END], 410,[END], 2.5,[END],[END],[END]
+
+## text-generation-e3-rope (token-by-token prediction)
+
+### 1.
+Generated so far: , 440,[END], 0, 116, 515, 364, 272, 153, 325, 4, 5, 119, 320, 534, 121, 2.5, 325, 302, 412
+
+## text-generation-e8-rope (token-by-token with kv)
+### with mask pad or mask attn, and using all current tokens for embedding tokens (must not actually be all setup given the results, although it is the best token-by-token inference)
+Generated so far:  
+330, 149, 0, 449, 149, 799, 
+449, 449, 223, 0, 113, 149, 
+248, 108, 239, 0, 335, 149, 
+341, 305, 671, 0, 358, 149, 
+190, 502, 264, 351, 15, 5, 
+344, 355, 217, 202, 444, 345, 
+216, 423, 149, 428, 449, 261, 
+15,[END], 118, 149, 452, 166, 
+305, 357, 106, 109, 149, 449, 
+518, 365, 20,[END] 265, 149, 
+202, 226, 166,[END] 104,
+
+### without mask pad or mask attn, and using all current tokens for embedding tokens (many zeros)
+Generated so far:  113, 0, 0, 0, 0, 338, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+
+### without mask pad, mask attn, and limiting the embedding tokens to the last token (many repeats)
+Generated so far:  396 489, 321, 321, 321, 321, 321, 321, 321, 321, 321, 321, 321, 321, 321, 321
+
+### with mask pad and mask attn, while limiting the embedding tokens to the last token (only repeats)
+Generated so far:  122 122 122 122 122 122 122 122 122 122 122 122 122 122 122 122 122 122 122 122
+
+## text-generation-e8-rope (at once, similar to training) (good enough, but requires completion to be supplied with prompt, defeating the purpose of predicting a completion)
+,, 0, 0, 330, 251, -21, 
+0, 2.5, 161, 161, 125, 243, 
+0, 2, 5, 305, 305, 361, 
+0, , 15, 161, 305, 217, 
+0, 17.5, 361, 161, 312, 54, 
+0, , 361, 161, 298, -41, 
+1, 0, 332, 332, -41, 101, 
+1, 2.5, 332, 332, 221, 86, 
+1, 5, 332, 332, 50, 70, 
+1, 15, 332, 332, 50, 70, 
+1, 17.5, 232, 332, -6, 369, 
+1, 20, 232, 106, -41, 149, 
+2, 0, 149, 305, 305, -13, 
+2, 2.5, 149, 149, 304, 149, 
+2, 5, 149, 149, 304, 116, 
+2, 15, 149, 149, 304, 116, 
+2, 17.5, 149, 306, 306, 77, 
+2, 20, 149, 303, 303, -1,[END]
+
+## text-generation-e3-rep
+Generated so far: 
+, 
+463, 440, 
+463, 190, 
+440, 463, 
+440, 440, 
+463, 441, 
+463, 440, 
+439, 463, 
+441,, 
+166, 449, 
+463, 440,
+

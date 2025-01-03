@@ -10,10 +10,14 @@ use burn::{
     tensor::{backend::AutodiffBackend, RangesArg},
     train::{ClassificationOutput, TrainOutput, TrainStep, ValidStep},
 };
+use nn::{
+    transformer::TransformerEncoderAutoregressiveCache, RotaryEncoding, RotaryEncodingConfig,
+};
 
 #[derive(Config)]
 pub struct TextGenerationModelConfig {
     pub transformer: TransformerEncoderConfig,
+    pub rotary: RotaryEncodingConfig,
     pub vocab_size: usize,
     pub pad_token: usize,
     // pub max_seq_length: usize,
@@ -25,8 +29,9 @@ pub struct TextGenerationModelConfig {
 pub struct TextGenerationModel<B: Backend> {
     transformer: TransformerEncoder<B>,
     embedding_token: Embedding<B>,
-    embedding_pos: Embedding<B>,
+    // embedding_pos: Embedding<B>,
     output: Linear<B>,
+    rotary: RotaryEncoding<B>,
     vocab_size: usize,
     pad_token: usize,
     // max_seq_length: usize,
@@ -41,16 +46,19 @@ impl TextGenerationModelConfig {
         let embedding_token =
             EmbeddingConfig::new(self.vocab_size, self.transformer.d_model).init(device);
 
-        // Use combined length for positional embeddings
-        let total_seq_length = self.max_prompt_len + self.max_completion_len;
-        let embedding_pos =
-            EmbeddingConfig::new(total_seq_length, self.transformer.d_model).init(device);
+        // // Use combined length for positional embeddings
+        // let total_seq_length = self.max_prompt_len + self.max_completion_len;
+        // let embedding_pos =
+        //     EmbeddingConfig::new(total_seq_length, self.transformer.d_model).init(device);
+
+        let rotary = self.rotary.init(device);
 
         TextGenerationModel {
             transformer,
             embedding_token,
-            embedding_pos,
+            // embedding_pos,
             output,
+            rotary,
             vocab_size: self.vocab_size,
             pad_token: self.pad_token,
             // max_seq_length: self.max_seq_length,
@@ -64,22 +72,32 @@ impl<B: Backend> TextGenerationModel<B> {
     //     &self,
     //     item: TrainingTextGenerationBatch<B>,
     // ) -> ClassificationOutput<B> {
-    //     let [batch_size, seq_length] = item.tokens_inputs.dims();
+    //     let [batch_size, total_length] = item.tokens_inputs.dims();
     //     let device = &self.devices()[0];
 
     //     let inputs = item.tokens_inputs.to_device(device);
     //     let targets = item.targets.to_device(device);
     //     let mask_pad = item.mask_pad.to_device(device);
 
-    //     let index_positions = Tensor::arange(0..seq_length as i64, device)
-    //         .reshape([1, seq_length])
+    //     // Create position indices for the entire sequence
+    //     let index_positions = Tensor::arange(0..total_length as i64, device)
+    //         .reshape([1, total_length])
     //         .repeat_dim(0, batch_size);
 
+    //     // Embeddings
     //     let embedding_positions = self.embedding_pos.forward(index_positions);
     //     let embedding_tokens = self.embedding_token.forward(inputs);
     //     let embedding = (embedding_positions + embedding_tokens) / 2;
 
-    //     let mask_attn = generate_autoregressive_mask::<B>(batch_size, seq_length, device);
+    //     // Create causal attention mask that allows prompt tokens to attend to each other
+    //     // but completion tokens can only attend to prompt and previous completion tokens
+    //     let mask_attn = generate_prompt_completion_mask::<B>(
+    //         batch_size,
+    //         item.prompt_length,
+    //         item.completion_length,
+    //         device,
+    //     );
+
     //     let encoded = self.transformer.forward(
     //         TransformerEncoderInput::new(embedding)
     //             .mask_pad(mask_pad)
@@ -87,18 +105,32 @@ impl<B: Backend> TextGenerationModel<B> {
     //     );
 
     //     let output = self.output.forward(encoded);
-    //     let output_flatten = output.reshape([batch_size * seq_length, self.vocab_size]);
-    //     let targets_flatten = targets.reshape([batch_size * seq_length]);
+
+    //     // We only want to compute loss on the completion portion
+    //     let completion_start = item.prompt_length;
+    //     let completion_end = completion_start + item.completion_length;
+
+    //     let output_completion = output
+    //         .slice([
+    //             0..batch_size,
+    //             completion_start..completion_end,
+    //             0..self.vocab_size,
+    //         ])
+    //         .reshape([batch_size * item.completion_length, self.vocab_size]);
+
+    //     let targets_completion = targets
+    //         .slice([0..batch_size, completion_start..completion_end])
+    //         .reshape([batch_size * item.completion_length]);
 
     //     let loss = CrossEntropyLossConfig::new()
     //         .with_pad_tokens(Some(vec![self.pad_token]))
-    //         .init(&output_flatten.device());
-    //     let loss = loss.forward(output_flatten.clone(), targets_flatten.clone());
+    //         .init(&output_completion.device());
+    //     let loss = loss.forward(output_completion.clone(), targets_completion.clone());
 
     //     ClassificationOutput {
     //         loss,
-    //         output: output_flatten,
-    //         targets: targets_flatten,
+    //         output: output_completion,
+    //         targets: targets_completion,
     //     }
     // }
 
@@ -113,18 +145,19 @@ impl<B: Backend> TextGenerationModel<B> {
         let targets = item.targets.to_device(device);
         let mask_pad = item.mask_pad.to_device(device);
 
-        // Create position indices for the entire sequence
-        let index_positions = Tensor::arange(0..total_length as i64, device)
-            .reshape([1, total_length])
-            .repeat_dim(0, batch_size);
+        // Token embeddings only - we don't need separate positional embeddings anymore
+        let embedding = self.embedding_token.forward(inputs);
 
-        // Embeddings
-        let embedding_positions = self.embedding_pos.forward(index_positions);
-        let embedding_tokens = self.embedding_token.forward(inputs);
-        let embedding = (embedding_positions + embedding_tokens) / 2;
+        // println!("Embedding shape: {:?}", embedding.dims());
+        // println!("Embedding dims {}", embedding.dims()[2]); // 768
 
-        // Create causal attention mask that allows prompt tokens to attend to each other
-        // but completion tokens can only attend to prompt and previous completion tokens
+        let embedding = embedding.unsqueeze::<4>();
+
+        let embedding_with_rope = self.rotary.forward(embedding);
+
+        let embedding_with_rope = embedding_with_rope.squeeze::<3>(0);
+
+        // Create causal attention mask
         let mask_attn = generate_prompt_completion_mask::<B>(
             batch_size,
             item.prompt_length,
@@ -133,14 +166,14 @@ impl<B: Backend> TextGenerationModel<B> {
         );
 
         let encoded = self.transformer.forward(
-            TransformerEncoderInput::new(embedding)
+            TransformerEncoderInput::new(embedding_with_rope)
                 .mask_pad(mask_pad)
                 .mask_attn(mask_attn),
         );
 
         let output = self.output.forward(encoded);
 
-        // We only want to compute loss on the completion portion
+        // Completion portion processing remains the same
         let completion_start = item.prompt_length;
         let completion_end = completion_start + item.completion_length;
 
@@ -168,104 +201,59 @@ impl<B: Backend> TextGenerationModel<B> {
         }
     }
 
-    // pub fn forward_training(
-    //     &self,
-    //     item: TrainingTextGenerationBatch<B>,
-    // ) -> ClassificationOutput<B> {
-    //     let [batch_size, prompt_length] = item.tokens_inputs.dims();
+    // pub fn forward_inference(&self, item: TrainingTextGenerationBatch<B>) -> Tensor<B, 3> {
+    //     let [batch_size, seq_length] = item.tokens_inputs.dims();
     //     let device = &self.devices()[0];
 
     //     let inputs = item.tokens_inputs.to_device(device);
-    //     let targets = item.targets.to_device(device);
     //     let mask_pad = item.mask_pad.to_device(device);
-
-    //     // Create position indices for just the prompt
-    //     let index_positions = Tensor::arange(0..prompt_length as i64, device)
-    //         .reshape([1, prompt_length])
-    //         .repeat_dim(0, batch_size);
-
-    //     // Embeddings for prompt only
-    //     let embedding_positions = self.embedding_pos.forward(index_positions);
-    //     let embedding_tokens = self.embedding_token.forward(inputs);
-    //     let embedding = (embedding_positions + embedding_tokens) / 2;
-
-    //     // No need for causal mask since we're only encoding the prompt
-    //     let encoded = self
-    //         .transformer
-    //         .forward(TransformerEncoderInput::new(embedding).mask_pad(mask_pad));
-
-    //     let output = self.output.forward(encoded);
-
-    //     // Reshape output and targets for loss computation
-    //     let output_reshaped = output.reshape([batch_size * prompt_length, self.vocab_size]);
-    //     let targets_reshaped = targets.reshape([batch_size * item.completion_length]);
-
-    //     let loss = CrossEntropyLossConfig::new()
-    //         .with_pad_tokens(Some(vec![self.pad_token]))
-    //         .init(&output_reshaped.device());
-    //     let loss = loss.forward(output_reshaped.clone(), targets_reshaped.clone());
-
-    //     ClassificationOutput {
-    //         loss,
-    //         output: output_reshaped,
-    //         targets: targets_reshaped,
-    //     }
-    // }
-
-    pub fn forward_inference(&self, item: TrainingTextGenerationBatch<B>) -> Tensor<B, 3> {
-        let [batch_size, seq_length] = item.tokens_inputs.dims();
-        let device = &self.devices()[0];
-
-        let inputs = item.tokens_inputs.to_device(device);
-        let mask_pad = item.mask_pad.to_device(device);
-
-        let index_positions = Tensor::arange(0..seq_length as i64, device)
-            .reshape([1, seq_length])
-            .repeat_dim(0, batch_size);
-
-        let embedding_positions = self.embedding_pos.forward(index_positions);
-        let embedding_tokens = self.embedding_token.forward(inputs);
-        let embedding = (embedding_positions + embedding_tokens) / 2;
-
-        let mask_attn = generate_autoregressive_mask::<B>(batch_size, seq_length, device);
-        let encoded = self.transformer.forward(
-            TransformerEncoderInput::new(embedding)
-                .mask_pad(mask_pad)
-                .mask_attn(mask_attn),
-        );
-
-        // Return logits in shape [batch_size, seq_length, vocab_size]
-        self.output.forward(encoded)
-    }
-
-    // pub fn forward_inference_sequential(
-    //     &self,
-    //     batch: TextGenerationBatch<B>,
-    //     current_tokens: &[i32], // Changed to take current tokens directly
-    //     seq_length: usize,
-    // ) -> Tensor<B, 3> {
-    //     let [batch_size, _] = batch.prompt_tokens.dims();
-    //     let device = &self.devices()[0];
-
-    //     // Create tensor from current_tokens slice
-    //     let tokens_tensor =
-    //         Tensor::<B, 1, Int>::from_ints(current_tokens, device).reshape([1, seq_length]); // Reshape to [batch_size=1, seq_length]
 
     //     let index_positions = Tensor::arange(0..seq_length as i64, device)
     //         .reshape([1, seq_length])
     //         .repeat_dim(0, batch_size);
 
     //     let embedding_positions = self.embedding_pos.forward(index_positions);
-    //     let embedding_tokens = self.embedding_token.forward(tokens_tensor);
+    //     let embedding_tokens = self.embedding_token.forward(inputs);
     //     let embedding = (embedding_positions + embedding_tokens) / 2;
 
-    //     // Create causal attention mask
-    //     let mask_attn = generate_causal_mask::<B>(batch_size, seq_length, device);
-
+    //     let mask_attn = generate_autoregressive_mask::<B>(batch_size, seq_length, device);
     //     let encoded = self.transformer.forward(
     //         TransformerEncoderInput::new(embedding)
+    //             .mask_pad(mask_pad)
+    //             .mask_attn(mask_attn),
+    //     );
+
+    //     // Return logits in shape [batch_size, seq_length, vocab_size]
+    //     self.output.forward(encoded)
+    // }
+
+    // pub fn forward_inference_sequential(
+    //     &self,
+    //     batch: TextGenerationBatch<B>,
+    //     current_tokens: &[u32],
+    //     seq_length: usize,
+    //     cache: &mut TransformerEncoderAutoregressiveCache<B>,
+    // ) -> Tensor<B, 3> {
+    //     let device = &self.devices()[0];
+    //     // should be supplying only the token after input_pos anyway, so use whole current_tokens
+    //     let tokens_tensor =
+    //         Tensor::<B, 1, Int>::from_ints(current_tokens, device).reshape([1, seq_length]);
+
+    //     let embedding = self.embedding_token.forward(tokens_tensor);
+    //     let embedding = embedding.unsqueeze::<4>();
+    //     let embedding_with_rope = self.rotary.forward(embedding);
+    //     let embedding_with_rope = embedding_with_rope.squeeze::<3>(0);
+
+    //     // Create causal attention mask for the full sequence
+    //     let mask_attn = generate_causal_mask::<B>(1, seq_length, device);
+
+    //     // println!("mask_attn data: {:?}", mask_attn.to_data().to_vec::<bool>()); // the mask_attn is huge, has both true and false values
+
+    //     let encoded = self.transformer.forward_autoregressive_inference(
+    //         TransformerEncoderInput::new(embedding_with_rope)
     //             .mask_pad(batch.prompt_mask)
     //             .mask_attn(mask_attn),
+    //         cache,
     //     );
 
     //     self.output.forward(encoded)
@@ -274,32 +262,31 @@ impl<B: Backend> TextGenerationModel<B> {
     pub fn forward_inference_sequential(
         &self,
         batch: TextGenerationBatch<B>,
-        current_tokens: &[i32],
+        current_tokens: &[u32],
         seq_length: usize,
+        cache: &mut TransformerEncoderAutoregressiveCache<B>,
     ) -> Tensor<B, 3> {
         let device = &self.devices()[0];
 
-        // Create tensor from current_tokens slice and reshape to [batch_size=1, seq_length]
-        let tokens_tensor =
-            Tensor::<B, 1, Int>::from_ints(current_tokens, device).reshape([1, seq_length]);
+        // We only need to process the newest token for inference
+        let last_token = &current_tokens[current_tokens.len() - 1..];
+        let tokens_tensor = Tensor::<B, 1, Int>::from_ints(last_token, device).reshape([1, 1]);
 
-        // Create positional indices tensor - only use the last position for efficiency
-        let last_pos = (seq_length - 1) as i64;
-        let index_positions = Tensor::arange(0..seq_length as i64, device).reshape([1, seq_length]);
+        // Get embeddings for just the new token
+        let embedding = self.embedding_token.forward(tokens_tensor);
+        let embedding = embedding.unsqueeze::<4>();
+        let embedding_with_rope = self.rotary.forward(embedding);
+        let embedding_with_rope = embedding_with_rope.squeeze::<3>(0);
 
-        // Get embeddings
-        let embedding_positions = self.embedding_pos.forward(index_positions);
-        let embedding_tokens = self.embedding_token.forward(tokens_tensor);
-        let embedding = (embedding_positions + embedding_tokens) / 2.0;
+        // For sequential inference, we only need the mask for the new position
+        // The cache handles previous positions
+        let mask_attn = generate_causal_mask::<B>(1, 1, device);
 
-        // Create causal attention mask for the full sequence
-        let mask_attn = generate_causal_mask::<B>(1, seq_length, device);
-
-        // Forward pass through transformer
-        let encoded = self.transformer.forward(
-            TransformerEncoderInput::new(embedding)
-                .mask_pad(batch.prompt_mask)
+        let encoded = self.transformer.forward_autoregressive_inference(
+            TransformerEncoderInput::new(embedding_with_rope)
+                .mask_pad(batch.prompt_mask.slice([0..1, seq_length - 1..seq_length])) // Only use mask for new position
                 .mask_attn(mask_attn),
+            cache,
         );
 
         self.output.forward(encoded)

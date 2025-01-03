@@ -5,15 +5,17 @@ use crate::{
         tokenizer::Tokenizer,
     },
     model::TextGenerationModelConfig,
+    sampling::{Sampler, TopP},
     training::ExperimentConfig,
 };
-use burn::{config::Config, tensor::Int};
+use burn::{config::Config, nn::RotaryEncodingConfig, tensor::Int};
 use burn::{data::dataloader::batcher::Batcher, tensor::cast::ToElement};
 use burn::{
     module::Module,
     record::{CompactRecorder, Recorder},
     tensor::{activation::softmax, backend::Backend, Shape, Tensor, TensorData},
 };
+use itertools::Itertools;
 use std::{path::Path, sync::Arc};
 
 use crate::{data::tokenizer::NumericalTokenizer, model::TextGenerationModel};
@@ -41,8 +43,15 @@ pub fn infer_from_text_trainlike<B: Backend>(
     // Debug: Print tokenizer vocabulary size
     println!("Tokenizer vocab size: {}", tokenizer.vocab_size());
 
+    let rope = RotaryEncodingConfig::new(
+        128 + 512, // max_sequence_length (prompt + completion)
+        config.transformer.d_model,
+    )
+    .with_theta(10000.0);
+
     let model = TextGenerationModelConfig::new(
         config.transformer.clone(),
+        rope,
         tokenizer.vocab_size(),
         tokenizer.pad_token(),
         128,
@@ -165,94 +174,94 @@ pub fn infer_from_text_trainlike<B: Backend>(
 }
 
 // batch inference
-pub fn infer_from_text_batch<B: Backend>(
-    artifact_dir: &str,
-    device: &B::Device,
-    texts: Vec<String>,
-) {
-    // Load experiment configuration
-    let config = ExperimentConfig::load(format!("{artifact_dir}/config.json").as_str())
-        .expect("Config file present");
+// pub fn infer_from_text_batch<B: Backend>(
+//     artifact_dir: &str,
+//     device: &B::Device,
+//     texts: Vec<String>,
+// ) {
+//     // Load experiment configuration
+//     let config = ExperimentConfig::load(format!("{artifact_dir}/config.json").as_str())
+//         .expect("Config file present");
 
-    // Load the model
-    let record = CompactRecorder::new()
-        .load(format!("{artifact_dir}/model").into(), device)
-        .expect("Trained model should exist");
+//     // Load the model
+//     let record = CompactRecorder::new()
+//         .load(format!("{artifact_dir}/model").into(), device)
+//         .expect("Trained model should exist");
 
-    println!("Model loaded...");
+//     println!("Model loaded...");
 
-    let tokenizer = Arc::new(NumericalTokenizer::default());
-    let batcher = TextGenerationBatcher::new(tokenizer.clone(), 128, 512);
+//     let tokenizer = Arc::new(NumericalTokenizer::default());
+//     let batcher = TextGenerationBatcher::new(tokenizer.clone(), 128, 512);
 
-    // Debug: Print tokenizer vocabulary size
-    println!("Tokenizer vocab size: {}", tokenizer.vocab_size());
+//     // Debug: Print tokenizer vocabulary size
+//     println!("Tokenizer vocab size: {}", tokenizer.vocab_size());
 
-    let model = TextGenerationModelConfig::new(
-        config.transformer.clone(),
-        tokenizer.vocab_size(),
-        tokenizer.pad_token(),
-        128,
-        512,
-    )
-    .init::<B>(&device);
+//     let model = TextGenerationModelConfig::new(
+//         config.transformer.clone(),
+//         tokenizer.vocab_size(),
+//         tokenizer.pad_token(),
+//         128,
+//         512,
+//     )
+//     .init::<B>(&device);
 
-    let model: TextGenerationModel<B> = model.load_record(record);
+//     let model: TextGenerationModel<B> = model.load_record(record);
 
-    // Create a batch from the input text
-    let mut items = Vec::new();
+//     // Create a batch from the input text
+//     let mut items = Vec::new();
 
-    for text in texts.clone() {
-        let item = TextGenerationItem::new(text, String::new());
-        println!("input item: {:?}", item);
-        items.push(item);
-    }
+//     for text in texts.clone() {
+//         let item = TextGenerationItem::new(text, String::new());
+//         println!("input item: {:?}", item);
+//         items.push(item);
+//     }
 
-    let input = batcher.batch(items);
+//     let input = batcher.batch(items);
 
-    // 2. forward_inference approach, same results
-    // Run inference
-    let output = model.forward_inference(input);
+//     // 2. forward_inference approach, same results
+//     // Run inference
+//     let output = model.forward_inference(input);
 
-    // Get logits from the output - now properly shaped as [batch_size, seq_length, vocab_size]
-    let logits = output;
+//     // Get logits from the output - now properly shaped as [batch_size, seq_length, vocab_size]
+//     let logits = output;
 
-    // Apply softmax to get probabilities (along vocab_size dimension)
-    let probs = softmax(logits, 2);
+//     // Apply softmax to get probabilities (along vocab_size dimension)
+//     let probs = softmax(logits, 2);
 
-    // Get the predicted token indices
-    let predicted_tokens = probs.argmax(2);
+//     // Get the predicted token indices
+//     let predicted_tokens = probs.argmax(2);
 
-    // Process each sequence in the batch
-    for batch_idx in 0..texts.len() {
-        let sequence = predicted_tokens
-            .clone()
-            .slice([batch_idx..batch_idx + 1, 0..predicted_tokens.dims()[1]]);
-        // let sequence = predicted_tokens.slice([batch_idx, ..]);
-        let sequence = sequence.clone().reshape([sequence.dims()[1]]);
+//     // Process each sequence in the batch
+//     for batch_idx in 0..texts.len() {
+//         let sequence = predicted_tokens
+//             .clone()
+//             .slice([batch_idx..batch_idx + 1, 0..predicted_tokens.dims()[1]]);
+//         // let sequence = predicted_tokens.slice([batch_idx, ..]);
+//         let sequence = sequence.clone().reshape([sequence.dims()[1]]);
 
-        let sequence_data = sequence.to_data();
+//         let sequence_data = sequence.to_data();
 
-        // Convert bytes to Vec<usize>
-        let predicted_token_ids: Vec<usize> = sequence_data
-            .bytes
-            .chunks(std::mem::size_of::<B::IntElem>())
-            .map(|chunk| {
-                let mut bytes = [0u8; 8];
-                bytes[..chunk.len()].copy_from_slice(chunk);
-                usize::from_ne_bytes(bytes)
-            })
-            .collect();
+//         // Convert bytes to Vec<usize>
+//         let predicted_token_ids: Vec<usize> = sequence_data
+//             .bytes
+//             .chunks(std::mem::size_of::<B::IntElem>())
+//             .map(|chunk| {
+//                 let mut bytes = [0u8; 8];
+//                 bytes[..chunk.len()].copy_from_slice(chunk);
+//                 usize::from_ne_bytes(bytes)
+//             })
+//             .collect();
 
-        // println!(
-        //     "Predicted token ids for input {}: {:?}",
-        //     batch_idx, predicted_token_ids
-        // );
+//         // println!(
+//         //     "Predicted token ids for input {}: {:?}",
+//         //     batch_idx, predicted_token_ids
+//         // );
 
-        // Decode the tokens back to text
-        let predicted_text = tokenizer.decode(&predicted_token_ids);
-        println!("Generated text for input: {}", predicted_text);
-    }
-}
+//         // Decode the tokens back to text
+//         let predicted_text = tokenizer.decode(&predicted_token_ids);
+//         println!("Generated text for input: {}", predicted_text);
+//     }
+// }
 
 // // sequential inference
 pub fn infer_from_text<B: Backend>(
@@ -280,8 +289,15 @@ pub fn infer_from_text<B: Backend>(
     let (max_prompt_len, max_completion_len) = (128, 512); // adjust these values
     let batcher = TextGenerationBatcher::new(tokenizer.clone(), max_prompt_len, max_completion_len);
 
+    let rope = RotaryEncodingConfig::new(
+        128 + 512, // max_sequence_length (prompt + completion)
+        config.transformer.d_model,
+    )
+    .with_theta(10000.0);
+
     let model = TextGenerationModelConfig::new(
         config.transformer.clone(),
+        rope,
         tokenizer.vocab_size(),
         tokenizer.pad_token(),
         max_prompt_len,
@@ -291,102 +307,122 @@ pub fn infer_from_text<B: Backend>(
 
     let model: TextGenerationModel<B> = model.load_record(record);
 
+    let transformer = config.transformer.init(device);
+    let mut cache = transformer.new_autoregressive_cache();
+
+    // Sampling strategy
+    let mut sampler = if temperature > 0.0 {
+        Sampler::TopP(TopP::new(0.7, 42))
+    } else {
+        Sampler::Argmax
+    };
+
+    // prefer more deterministic sampling for now
+    // let mut sampler = Sampler::Argmax;
+
     // Process each prompt
     for prompt in prompts {
         println!("Processing prompt: {}", prompt);
 
         // Create initial input by tokenizing the prompt
-        let mut current_tokens = tokenizer.encode(&prompt, true);
+        let mut current_tokens: tokenizers::Encoding = tokenizer.encode_inference(&prompt, true);
+        let mut current_tokens: Vec<u32> = current_tokens.get_ids().to_vec();
         let prompt_length = current_tokens.len();
 
-        let mut seq_length = prompt_length;
+        // Track position for attention
+        let mut input_pos = 0;
 
         // Generate tokens one by one
         for _ in 0..max_new_tokens {
-            // println!("Preparing batch...");
+            // Convert current sequence to tensor
+            let current_tensor: Tensor<B, 2, Int> =
+                Tensor::<B, 1, Int>::from_ints(&current_tokens[input_pos..], device)
+                    .reshape([current_tokens.len() - input_pos, 1]);
 
-            // Prepare input batch
-            let batch = prepare_inference_batch::<B>(
-                &current_tokens,
+            // Prepare batch and get model output
+            let batch: TextGenerationBatch<B> = prepare_inference_batch::<B>(
+                &current_tensor,
                 prompt_length,
-                // tokenizer.clone(),
                 max_new_tokens,
                 device,
             );
 
-            // println!("Running inference...");
+            let encoded: Tensor<B, 3> = model.forward_inference_sequential(
+                batch,
+                &current_tokens[input_pos..],
+                current_tokens.len() - input_pos,
+                &mut cache,
+            );
 
-            // Convert usize slice to Ints
-            let int_tokens: Vec<i32> = current_tokens.iter().map(|&t| t as i32).collect();
+            // Get logits for the next token only
+            let [batch_size, seq_len, vocab_size] = encoded.dims();
+            let next_token_logits: Tensor<B, 2> = encoded
+                .slice([0..batch_size, seq_len - 1..seq_len])
+                .squeeze(1);
 
-            // Get model output for the current sequence
-            let encoded = model.forward_inference_sequential(batch, &int_tokens, seq_length);
-
-            println!("Encoded shape: {:?}", encoded.dims());
-
-            // Get predictions for the last token
-            // println!("Slicing at position: {}", seq_length);
-
-            let last_token_logits = encoded.slice([
-                0..1,
-                seq_length - 1..seq_length, // This ensures we're getting a slice of size 1
-                0..tokenizer.vocab_size(),
-            ]);
-
-            // println!("Apply temperature...");
-
-            // Apply temperature
-            let scaled_logits = if temperature != 1.0 {
-                last_token_logits / temperature
+            // Apply temperature and sample
+            let next_token_logits = if temperature != 1.0 {
+                softmax(next_token_logits / temperature, 1)
             } else {
-                last_token_logits
+                softmax(next_token_logits, 1)
             };
 
-            // Convert to probabilities
-            let probs = softmax(scaled_logits, 2);
+            println!(
+                "Top 5 logits (after softmax): {:?}",
+                next_token_logits
+                    .to_data()
+                    .to_vec::<f32>()
+                    .expect("Could not get vec")
+                    .iter()
+                    .enumerate()
+                    .sorted_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap())
+                    .take(5)
+                    .collect::<Vec<_>>()
+            );
 
-            let squeeze_probs: Tensor<B, 2> = probs.squeeze(0);
+            let next_token: Tensor<B, 2, Int> = sampler.sample(next_token_logits);
 
-            // println!("Sampling from probabilities...");
+            // Extract the token and append to sequence
+            let next_token_value: i32 =
+                next_token.to_data().to_vec().expect("Could not get vec")[0];
 
-            // Sample from the distribution
-            let next_token = sample_from_probs::<B>(squeeze_probs.squeeze(0));
+            println!("Selected token: {}", next_token_value);
 
-            // Append the new token
-            current_tokens.push(next_token);
+            current_tokens.push(next_token_value as u32);
 
-            // println!("Incrementing sequence length...");
+            // Update input position for next iteration
+            input_pos = current_tokens.len() - 1;
 
-            seq_length += 1;
-
-            // Check for completion (e.g., if we generated an end token)
-            // if next_token == tokenizer.end_token() {
-            //     break;
-            // }
-
-            // Print current tokens every 10 tokens
-            if current_tokens.len() % 10 == 0 {
-                let generated_text = tokenizer.decode(&current_tokens[prompt_length..]);
+            // Print progress
+            if (current_tokens.len() - prompt_length) % 10 == 0 {
+                let generated_text = tokenizer.decode_inference(&current_tokens[prompt_length..]);
                 println!("Generated so far: {}", generated_text);
             }
+
+            // Optional: Check for end token
+            // if next_token_value as u32 == tokenizer.end_token() {
+            //     break;
+            // }
         }
 
-        // Decode the generated sequence
-        let generated_text = tokenizer.decode(&current_tokens[prompt_length..]);
-        println!("Generated completion: {}", generated_text);
+        // Final output
+        // let generated_text = tokenizer.decode(&current_tokens[prompt_length..]);
+        // println!("Final completion: {}", generated_text);
     }
 }
 
 // Helper function to prepare a single inference batch
 fn prepare_inference_batch<B: Backend>(
-    tokens: &[usize],
+    // tokens: &[usize],
+    tokens: &Tensor<B, 2, Int>,
     prompt_length: usize,
     max_new_tokens: usize,
     device: &B::Device,
 ) -> TextGenerationBatch<B> {
     // Create prompt tensors
-    let prompt_tokens = Tensor::<B, 1, Int>::from_ints(&tokens[..prompt_length], device)
-        .reshape([1, prompt_length]);
+    // let prompt_tokens = Tensor::<B, 1, Int>::from_ints(&tokens[..prompt_length], device)
+    //     .reshape([1, prompt_length]);
+    let prompt_tokens = tokens.clone().slice([0..1, 0..prompt_length]);
     let prompt_mask = Tensor::<B, 2, Int>::ones([1, prompt_length], device).bool();
 
     // Create empty completion tensors
