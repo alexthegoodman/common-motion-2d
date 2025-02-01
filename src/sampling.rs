@@ -15,7 +15,7 @@ impl Sampler {
         match self {
             Self::TopP(s) => s.sample(logits),
             Self::Argmax => {
-                println!("Argmax sampling...");
+                // println!("Argmax sampling...");
                 logits.argmax(1)
             }
         }
@@ -68,7 +68,7 @@ impl Sampling for TopP {
             .unwrap()
             .sample(&mut self.rng);
 
-        println!("Slicing in probs...");
+        // println!("Slicing in probs...");
 
         probs_idx.slice([0..1, next_token_idx..next_token_idx + 1])
     }

@@ -9,7 +9,10 @@ use burn::{
         dataloader::DataLoaderBuilder,
         dataset::{transform::SamplerDataset, Dataset},
     },
-    lr_scheduler::{self, constant::ConstantLr, noam::NoamLrSchedulerConfig},
+    lr_scheduler::{
+        self, constant::ConstantLr, cosine::CosineAnnealingLrSchedulerConfig,
+        noam::NoamLrSchedulerConfig,
+    },
     nn::transformer::TransformerEncoderConfig,
     optim::{AdamConfig, AdamWConfig},
     prelude::*,
@@ -27,10 +30,11 @@ use std::sync::Arc;
 pub struct ExperimentConfig {
     pub transformer: TransformerEncoderConfig,
     pub optimizer: AdamWConfig,
-    #[config(default = 512)]
-    // #[config(default = 1024)]
+    // #[config(default = 256)]
+    #[config(default = 1024)]
     pub max_seq_length: usize,
-    #[config(default = 2)]
+    // #[config(default = 2)]
+    #[config(default = 1)]
     pub batch_size: usize,
     #[config(default = 50)]
     pub num_epochs: usize,
@@ -44,13 +48,12 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
     artifact_dir: &str,
 ) {
     let tokenizer = Arc::new(NumericalTokenizer::default());
-    // let (max_prompt_len, max_completion_len) =
-    //     TextGenerationBatcher::get_max_lengths(&dataset_train, &tokenizer);
-    let batcher_train = TextGenerationBatcher::new(tokenizer.clone(), 128, 512);
-    let batcher_test = TextGenerationBatcher::new(tokenizer.clone(), 128, 512);
+
+    let batcher_train = TextGenerationBatcher::new(tokenizer.clone(), config.max_seq_length);
+    let batcher_test = TextGenerationBatcher::new(tokenizer.clone(), config.max_seq_length);
 
     let rope = RotaryEncodingConfig::new(
-        128 + 512, // max_sequence_length (prompt + completion)
+        config.max_seq_length, // max_sequence_length (prompt + completion)
         config.transformer.d_model,
     )
     .with_theta(10000.0);
@@ -60,9 +63,7 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
         rope,
         tokenizer.vocab_size(),
         tokenizer.pad_token(),
-        // config.max_seq_length,
-        128,
-        512,
+        config.max_seq_length,
     )
     .init::<B>(&device);
 
@@ -70,34 +71,36 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
         .batch_size(config.batch_size)
         .num_workers(4)
         .shuffle(42)
-        // .build(SamplerDataset::new(dataset_train, 10_000));
-        // .build(SamplerDataset::new(dataset_train, 4326));
         .build(SamplerDataset::new(dataset_train, 950));
 
     let dataloader_test = DataLoaderBuilder::new(batcher_test)
         .batch_size(config.batch_size)
         .num_workers(4)
         .shuffle(42)
-        // .build(SamplerDataset::new(dataset_test, 1000));
-        // .build(SamplerDataset::new(dataset_test, 1050));
         .build(SamplerDataset::new(dataset_test, 45));
 
     // let accum = 1; // Effective batch size = 6 * 6 = 32. 32 is the "best maximum"
     let accum = config.batch_size;
     let optim = config.optimizer.init();
+
     // let lr_scheduler = NoamLrSchedulerConfig::new(0.01 / accum as f64)
     //     .with_warmup_steps(6000)
     //     // .with_warmup_steps(2000)
     //     .with_model_size(config.transformer.d_model)
     //     .init();
+
+    let lr_scheduler = CosineAnnealingLrSchedulerConfig::new(0.001, 1000)
+        .with_min_lr(0.00001)
+        .init();
+
     // let lr_scheduler = ConstantLr::new(0.00000001); // no learning noted
     // let lr_scheduler = ConstantLr::new(0.01); // spike followed by decrease
     // let lr_scheduler = ConstantLr::new(0.00001); // fast learning, quick to stabilize loss at around 1.57
-    let lr_scheduler = ConstantLr::new(0.00005); // better for batch size of 2, similar to 0.00001 at batch size of 1
-                                                 // let lr_scheduler = ConstantLr::new(0.00007);
-                                                 // let lr_scheduler = ConstantLr::new(0.0001); // slightly, odd
-                                                 // let lr_scheduler = ConstantLr::new(0.000001); // slightly slower, but quick to stabilize loss at around 1.73
-                                                 // let lr_scheduler = ConstantLr::new(0.0000001); // no learning
+    // let lr_scheduler = ConstantLr::new(0.00005); // better for batch size of 2, similar to 0.00001 at batch size of 1
+    // let lr_scheduler = ConstantLr::new(0.00007);
+    // let lr_scheduler = ConstantLr::new(0.0001); // slightly, odd
+    // let lr_scheduler = ConstantLr::new(0.000001); // slightly slower, but quick to stabilize loss at around 1.73
+    // let lr_scheduler = ConstantLr::new(0.0000001); // no learning
 
     let learner = LearnerBuilder::new(artifact_dir)
         .metric_train(CudaMetric::new())

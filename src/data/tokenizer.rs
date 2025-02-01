@@ -30,7 +30,7 @@ impl Default for NumericalTokenizer {
     fn default() -> Self {
         // let mut tokenizer = tokenizers::Tokenizer::from_pretrained("gpt2", None).unwrap();
         let mut tokenizer = tokenizers::Tokenizer::from_file(
-            "D:/projects/common/common-motion-2d/backup/tokenizer-all.json",
+            "D:/projects/common/common-motion-2d/backup/tokenizer.json",
         )
         .unwrap();
         tokenizer.add_special_tokens(&[
@@ -103,27 +103,3 @@ impl NumericalTokenizer {
         padded_tokens
     }
 }
-
-// TODO: consider much more lightweight tokenizer
-// use tokenizers::pre_tokenizers::split::Split;
-// use tokenizers::tokenizer::Tokenizer;
-
-// pub struct CustomTokenizer {
-//     pub split: Split,
-// }
-
-// impl Tokenizer for CustomTokenizer {
-//     fn tokenize(&self, input: &str) -> Vec<String> {
-//         self.split.tokenize(input)
-//     }
-// }
-
-// fn main() {
-//     let tokenizer = CustomTokenizer {
-//         split: Split::new(","),
-//     };
-
-//     let input = "1,2,3,4,5";
-//     let tokens = tokenizer.tokenize(input);
-//     println!("{:?}", tokens); // Output: ["1", "2", "3", "4", "5"]
-// }

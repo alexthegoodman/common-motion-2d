@@ -136,3 +136,21 @@ Generated so far:
 166, 449, 
 463, 440,
 
+## e8 / Tokenizer all / cosine lr / b1 / d_model 256 / token by token / kv cache / rope:
+
+Generated so far: 
+, 480,5,3, 301, 301,, 
+313, 160,13,13, 428, 313, 
+469, 317,3, 469, 792, 469, 
+476, 52, 160, 35, 52, 469, 
+684, 68, 312, 684, 52,13,
+
+## e12 / Tokenizer small / cosine lr / b1 / d_model 256 / token by token / kv cache / rope / no pairs:
+(note: with pairs, just 22222222...)
+
+, 61, 213, 21, 81, 27, 
+21, 81, 21, 19, 20, 19, 
+203, 21, 21701, 21, 301, 
+21, 2101, 21, 21, 29, 19, 
+21, 21, 21, 21, 21, 21, 
+201,26, 21, 201, 21, 201, 20101,
