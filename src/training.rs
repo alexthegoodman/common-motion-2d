@@ -19,8 +19,11 @@ use burn::{
     record::{CompactRecorder, DefaultRecorder, Recorder},
     tensor::backend::AutodiffBackend,
     train::{
-        metric::{AccuracyMetric, CudaMetric, LearningRateMetric, LossMetric},
-        LearnerBuilder,
+        metric::{
+            store::{Aggregate, Direction, Split},
+            AccuracyMetric, CudaMetric, LearningRateMetric, LossMetric,
+        },
+        LearnerBuilder, MetricEarlyStoppingStrategy, StoppingCondition,
     },
 };
 use nn::RotaryEncodingConfig;
@@ -30,7 +33,7 @@ use std::sync::Arc;
 pub struct ExperimentConfig {
     pub transformer: TransformerEncoderConfig,
     pub optimizer: AdamWConfig,
-    // #[config(default = 256)]
+    // #[config(default = 512)]
     #[config(default = 1024)]
     pub max_seq_length: usize,
     // #[config(default = 2)]
@@ -114,6 +117,12 @@ pub fn train<B: AutodiffBackend, D: Dataset<TextGenerationItem> + 'static>(
         .devices(vec![device])
         .grads_accumulation(accum)
         .num_epochs(config.num_epochs)
+        .early_stopping(MetricEarlyStoppingStrategy::new::<LossMetric<B>>(
+            Aggregate::Mean,
+            Direction::Lowest,
+            Split::Train,
+            StoppingCondition::NoImprovementSince { n_epochs: 2 },
+        ))
         .summary()
         .build(model, optim, lr_scheduler);
 

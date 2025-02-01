@@ -30,18 +30,24 @@ impl Default for NumericalTokenizer {
     fn default() -> Self {
         // let mut tokenizer = tokenizers::Tokenizer::from_pretrained("gpt2", None).unwrap();
         let mut tokenizer = tokenizers::Tokenizer::from_file(
-            "D:/projects/common/common-motion-2d/backup/tokenizer.json",
+            "D:/projects/common/common-motion-2d/backup/tokenizer-all-wordpiece-ind.json",
         )
         .unwrap();
         tokenizer.add_special_tokens(&[
-            tokenizers::AddedToken::from("[START]", true),
-            tokenizers::AddedToken::from("[END]", true),
+            // tokenizers::AddedToken::from("[START]", true),
+            // tokenizers::AddedToken::from("[END]", true),
+            // tokenizers::AddedToken::from("[PAD]", true),
+            // tokenizers::AddedToken::from(String::from("<s>"), true),
+            // tokenizers::AddedToken::from(String::from("<pad>"), true),
+            // tokenizers::AddedToken::from(String::from("</s>"), true),
+            // tokenizers::AddedToken::from(String::from("<unk>"), true),
+            // tokenizers::AddedToken::from(String::from("<mask>"), true),
+            tokenizers::AddedToken::from("[CLS]", true),
+            tokenizers::AddedToken::from("[SEP]", true),
             tokenizers::AddedToken::from("[PAD]", true),
-            tokenizers::AddedToken::from(String::from("<s>"), true),
-            tokenizers::AddedToken::from(String::from("<pad>"), true),
-            tokenizers::AddedToken::from(String::from("</s>"), true),
-            tokenizers::AddedToken::from(String::from("<unk>"), true),
-            tokenizers::AddedToken::from(String::from("<mask>"), true),
+            tokenizers::AddedToken::from("[UNK]", true),
+            tokenizers::AddedToken::from("[NEG]", true),
+            tokenizers::AddedToken::from("[DEC]", true),
         ]);
 
         Self { tokenizer }
@@ -51,7 +57,8 @@ impl Default for NumericalTokenizer {
 impl Tokenizer for NumericalTokenizer {
     fn encode(&self, value: &str, special_tokens: bool) -> Vec<usize> {
         let text = match special_tokens {
-            true => "[START]".to_owned() + value + "[END]",
+            // true => "[START]".to_owned() + value + "[END]",
+            true => format!("[CLS] {} [SEP]", value),
             false => value.to_string(),
         };
         let tokens = self.tokenizer.encode(text, true).unwrap();
@@ -67,23 +74,36 @@ impl Tokenizer for NumericalTokenizer {
         self.tokenizer.get_vocab_size(true)
     }
 
-    fn pad_token(&self) -> usize {
-        self.tokenizer.token_to_id("[PAD]").unwrap() as usize
-    }
+    // fn pad_token(&self) -> usize {
+    //     self.tokenizer.token_to_id("[PAD]").unwrap() as usize
+    // }
+
+    // fn start_token(&self) -> usize {
+    //     self.tokenizer.token_to_id("[START]").unwrap() as usize
+    // }
+
+    // fn end_token(&self) -> usize {
+    //     self.tokenizer.token_to_id("[END]").unwrap() as usize
+    // }
 
     fn start_token(&self) -> usize {
-        self.tokenizer.token_to_id("[START]").unwrap() as usize
+        self.tokenizer.token_to_id("[CLS]").unwrap() as usize
     }
 
     fn end_token(&self) -> usize {
-        self.tokenizer.token_to_id("[END]").unwrap() as usize
+        self.tokenizer.token_to_id("[SEP]").unwrap() as usize
+    }
+
+    fn pad_token(&self) -> usize {
+        self.tokenizer.token_to_id("[PAD]").unwrap() as usize
     }
 }
 
 impl NumericalTokenizer {
     pub fn encode_inference(&self, value: &str, special_tokens: bool) -> Encoding {
         let text = match special_tokens {
-            true => "[START]".to_owned() + value + "[END]",
+            // true => "[START]".to_owned() + value + "[END]",
+            true => format!("[CLS] {} [SEP]", value),
             false => value.to_string(),
         };
         let tokens = self.tokenizer.encode(text, true).unwrap();

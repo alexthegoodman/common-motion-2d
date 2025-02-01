@@ -10,9 +10,18 @@ type Backend = burn::backend::Autodiff<Wgpu>;
 
 fn main() {
     // let config = ExperimentConfig::new(
-    //     burn::nn::transformer::TransformerEncoderConfig::new(256, 1024, 4, 6)
-    //         .with_norm_first(true)
-    //         .with_dropout(0.1),
+    //     burn::nn::transformer::TransformerEncoderConfig::new(
+    //         // 256, 1024, 4, 6 // 1-2GB ram, got to 0.3 loss
+    //         256, 1024, 8,
+    //         6, // 1-2GB ram, goes to 0.2 loss
+    //           // 256, 1024, 16,
+    //           // 6, // testing many heads, narrow width
+    //           // 384, 1536, 12,
+    //           // 6, // original for testing
+    //           // 512, 2048, 16, 6, // 4GB ram, potentially a better slope, but then a crazy spike in e2
+    //     )
+    //     .with_norm_first(true)
+    //     .with_dropout(0.1),
     //     burn::optim::AdamWConfig::new().with_weight_decay(1.0e-8),
     // );
 
@@ -21,7 +30,7 @@ fn main() {
     //     MotionDataset::train().expect("Couldn't load training set"),
     //     MotionDataset::test().expect("Couldn't load test set"),
     //     config,
-    //     "/tmp/cm2d-transformers-t-small-no-pairs",
+    //     "/tmp/cm2d-transformers-t-wordpiece-all-ind",
     // );
 
     let mut prompts = Vec::new();
@@ -30,12 +39,10 @@ fn main() {
     let device = burn::tensor::Device::<Backend>::DiscreteGpu(0);
 
     infer_from_text::<Backend>(
-        "/tmp/cm2d-transformers-t-small-no-pairs",
+        "/tmp/cm2d-transformers-t-wordpiece-all-ind",
         &device,
         prompts,
         512,
         1.0, // 1.0 should have no effect
     );
-
-    // // infer_from_text_trainlike::<Backend>("/tmp/text-generation-e8-rope", &device, prompts);
 }
